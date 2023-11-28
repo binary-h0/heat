@@ -8,22 +8,24 @@
 
 #define false 0
 #define true 1
+#define MAX_COMMAND_LENGTH 100
 
 typedef int bool;
 typedef struct opts_struct {
-    int interval;
+    char *interval;
     char *script;
-    int pid;
+    char *name;
+    char *pid;
     char *signal;
     char *fail;
     char *recovery;
-    int threshold;
+    char *threshold;
     char *fault_signal;
     char *success_signal;
-    int recovery_timeout;
+    char *recovery_timeout;
 } opts;
 
-int option_preproceessor(int argc, char *argv[]);
-opts *option_process(int argc, char *argv[]);
+int option_preproceessor(int argc, char *const argv[]);
+opts *option_process(int argc, char *const argv[]);
 
 #endif
