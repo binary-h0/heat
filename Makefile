@@ -1,9 +1,9 @@
 CC=gcc
 CFLAGS=-Wall -I include
 LDFLAGS=
-SOURCE=option_handler.c main.c
+SOURCE=option_handler.c
 OBJS=$(SOURCE:c=o)
-EXECUTABLE=main
+EXECUTABLE=heat
 
 all: $(EXECUTABLE)
 
@@ -13,5 +13,9 @@ $(EXECUTABLE): $(OBJS)
 %.o: $(addprefix src/, %.c)
 	$(CC) $(CFLAGS) -c $<
 	mv $@ bin/
+
 clean:
 	rm -f $(OBJS) $(TARGET)
+
+sentinel: sentinel.c
+	$(CC) $(CFLAGS) $< -o $@
