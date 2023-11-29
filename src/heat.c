@@ -54,10 +54,18 @@ void process_info_print() {
     printf("[heat] pid: %d, pgid: %d\n", pid, pgid);
 }
 
+void check_script(char *script) {
+    if (access(script, F_OK) == -1) {
+        perror("\e[1;31m[ERROR] script file not excutable\e[0m");
+        exit(1);
+    }
+}
+
 int main(int argc, char *const argv[]) {
     process_info_print();
     opts *options;
     if ((options = option_process(argc, argv)) == NULL) return 1;
+    check_script(options->script);
     update_environment(options);
     build_sentinel_process(options);
 
