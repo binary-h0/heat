@@ -32,21 +32,34 @@ typedef struct sentinel_env_struct {
     int recovery_timeout;
 } sentinel_env_t;
 
-typedef struct sentinel_struct {
-    sentinel_env_t env;
-    enum status stat;
-    cll_t *cp_list;
-    int cp_count;
-    struct sigaction sa;
-    int fault_count;
-} sentinel_t;
+typedef struct sigaction_handler_struct {
+    int signo;
+    void (*handler)(int, siginfo_t *, void *);
+} signal_handler_t;
 
 typedef struct process_stat_struct {
     int pid;
     int status;
 } process_stat_t;
 
+typedef struct sentinel_struct {
+    sentinel_env_t env;
+    enum status stat;
+    cll_t *cp_list;
+    int cp_count;
+    struct sigaction sa;
+    signal_handler_t *signal_handler;
+    struct itimerval timer;
+    int fault_count;
+} sentinel_t;
+
+void sentinel_init(sentinel_t *sentinel);
+void sentinel_init_timer(sentinel_t *sentinel);
+void sentinel_init_signals(sentinel_t *sentinel);
+void sentinel_signal_handler(int signo, siginfo_t *info, void *context);
+void sentinel_interval_handler(int signo, siginfo_t *info, void *context);
+void sentinel_executor(sentinel_t *sentinel);
 int execute_command(const char *command, const char *name, char *const argv[]);
-void handler(int signo);
+void sentinel_print(sentinel_t *sentinel);
 
 #endif

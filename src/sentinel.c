@@ -42,6 +42,41 @@ void sentinel_init(sentinel_t *sentinel) {
     sentinel->cp_list = cll_init();
     sentinel->cp_count = 0;
     sentinel->fault_count = 0;
+    sentinel_init_timer(sentinel);
+    sentinel_init_signals(sentinel);
+}
+
+void sentinel_init_timer(sentinel_t *sentinel) {
+    // 이걸로 바꿔야 할 수도 있음
+    sentinel->timer.it_value.tv_sec = sentinel->env.interval;
+    sentinel->timer.it_value.tv_usec = 0;
+    sentinel->timer.it_interval.tv_sec = sentinel->env.interval;
+    sentinel->timer.it_interval.tv_usec = 0;
+    setitimer(ITIMER_REAL, &(sentinel->timer), NULL);
+    sentinel_executor(sentinel);
+}
+
+void sentinel_init_signals(sentinel_t *sentinel) {
+    signal_handler_t handlers[] = {
+        {SIGALRM, sentinel_interval_handler},
+        // {SIGQUIT, sentinel_signal_handler},
+    };
+    sentinel->sa.sa_flags = SA_SIGINFO;
+    for (int i = 0; i < sizeof(handlers) / sizeof(signal_handler_t); i++) {
+        sentinel->sa.sa_sigaction = handlers[i].handler;
+        sigaction(handlers[i].signo, &(sentinel->sa), NULL);
+    }
+    // 여기 의미상 처리 필요
+    sigemptyset(&sentinel->sa.sa_mask);
+    sigaddset(&sentinel->sa.sa_mask, SIGALRM);
+    sigaddset(&sentinel->sa.sa_mask, SIGQUIT);
+    // 여기까지
+    // sigaddset(&sentinel->sa.sa_mask, SIGUSR1);
+}
+
+void sentinel_signal_handler(int signo, siginfo_t *info, void *context) {
+    psignal(signo, "received signal");
+    sentinel_executor(&sentinel);
 }
 
 void sentinel_print(sentinel_t *sentinel) {
@@ -89,8 +124,8 @@ int execute_command(const char *script, const char *name, char *const argv[]) {
     return -1;
 }
 
-void sentinel_interval_handler(int signo) {
-    psignal(signo, "received signal");
+void sentinel_interval_handler(int signo, siginfo_t *info, void *context) {
+    psignal(signo, "interval handler");
     sentinel_executor(&sentinel);
 }
 
@@ -105,10 +140,10 @@ process_stat_t sentinel_check_child_process(sentinel_t *sentinel) {
     process_stat_t ps;
     ps.pid = 0;
     ps.status = 0;
-    printf("cp_size: %d\n", cp_list_size);
+    // printf("cp_size: %d\n", cp_list_size);
     while (cp_list_size--) {
         int pid = cll_get(sentinel->cp_list);
-        printf("pid: %d ", pid);
+        // printf("pid: %d ", pid);
         if (sentinel_check_process(sentinel, pid, &cp_status)) {
             cll_delete(sentinel->cp_list);
             sentinel->cp_count--;
@@ -119,6 +154,7 @@ process_stat_t sentinel_check_child_process(sentinel_t *sentinel) {
             // printf("process is running\n");
             cll_next(sentinel->cp_list);
         }
+        usleep(1000 * 100);
     }
 
     return ps;
@@ -141,28 +177,11 @@ void process_info_print() {
     printf("[sentinel] pid: %d, pgid: %d\n", pid, pgid);
 }
 
-void sentinel_init_signals(sentinel_t *sentinel) {
-    sentinel->sa.sa_handler = handler;
-}
-
 int main(int argc, char *argv[]) {
     process_info_print();  // TODO: remove this line
     sentinel_init(&sentinel);
     sentinel_print(&sentinel);  // TODO: remove this line
 
-    struct sigaction sa;
-    sa.sa_handler = sentinel_interval_handler;
-    sa.sa_flags = 0;
-    sigemptyset(&sa.sa_mask);
-    sigaddset(&sa.sa_mask, SIGALRM);
-    sigaction(SIGALRM, &sa, NULL);
-    struct itimerval timer;
-    timer.it_value.tv_sec = 1;
-    timer.it_value.tv_usec = 0;
-    timer.it_interval.tv_sec = 1;
-    timer.it_interval.tv_usec = 0;
-
-    setitimer(ITIMER_REAL, &timer, NULL);
     printf("sentinel is running\n");
     sentinel_run(&sentinel);
 
