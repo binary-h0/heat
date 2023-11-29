@@ -63,8 +63,8 @@ opts *option_process(int argc, char *const argv[]) {  // TODO: 함수명 변경 
                 break;
             case 's':
                 options->script = optarg;
-                char *cp_arg =
-                    (char *)malloc(strlen(optarg) + 1);  // TODO: free 필요
+                // TODO: free 필요
+                char *cp_arg = (char *)malloc(strlen(optarg) + 1);
                 strcpy(cp_arg, optarg);
                 char *stack[MAX_COMMAND_LENGTH];
                 char *tok = strtok(cp_arg, "/");
@@ -132,12 +132,24 @@ opts *option_process(int argc, char *const argv[]) {  // TODO: 함수명 변경 
     }
 
     if (argc != parsing_point) {
-        char s[MAX_COMMAND_LENGTH];
-        char *cp_arg =
-            (char *)malloc(strlen(argv[parsing_point]) + 1);  // TODO: free 필요
-        strcpy(cp_arg, argv[parsing_point]);
+        // char s[MAX_COMMAND_LENGTH];
+        // char *stack[MAX_COMMAND_LENGTH];
+        char *cp_arg, *tok, *script;
+        // TODO: free 필요
+        options->script = argv[parsing_point];
+        int len = 0;
+        for (int i = parsing_point + 1; i < argc; i++)
+            len += strlen(argv[i]) + 1;
+        char *buf = (char *)malloc(len + 1);  // TODO: free 필요
+        for (int i = parsing_point + 1; i < argc; i++) {
+            strcat(buf, argv[i]);
+            strcat(buf, " ");
+        }
+        options->script_argv = buf;
+        cp_arg = (char *)malloc(strlen(options->script) + 1);
+        strcpy(cp_arg, options->script);
         char *stack[MAX_COMMAND_LENGTH];
-        char *tok = strtok(cp_arg, "/");
+        tok = strtok(cp_arg, "/");
         int i = 0;
         while (tok != NULL) {
             stack[i++] = tok;
@@ -145,24 +157,11 @@ opts *option_process(int argc, char *const argv[]) {  // TODO: 함수명 변경 
         }
         tok = strtok(stack[i - 1], ".");
         options->name = tok;
-
-        int n = sprintf(s, "%s", argv[parsing_point]);
-        if (n < 0) {
-            perror("[ERROR] sprintf");
-            return NULL;
-        }
-        for (i = parsing_point + 1; i < argc; i++) {
-            if ((n = sprintf(s, "%s %s", s, argv[i])) < 0) {
-                perror("[ERROR] sprintf");
-                return NULL;
-            }
-        }
-        options->script = (char *)malloc(strlen(s) + 1);  // TODO: free 필요
-        strcpy(options->script, s);
     }
 
     if (options->interval == NULL) options->interval = "1";
     if (options->script == NULL) options->script = "echo hello";
+    if (options->script_argv == NULL) options->script_argv = "";
     if (options->name == NULL) options->name = "hello";
     if (options->pid == NULL) {
         options->pid = (char *)malloc(sizeof(char) * 10);

@@ -14,6 +14,7 @@ typedef int bool;
 typedef struct opts_struct {
     char *interval;
     char *script;
+    char *script_argv;
     char *name;
     char *pid;
     char *signal;
