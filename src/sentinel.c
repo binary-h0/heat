@@ -159,6 +159,13 @@ void execute_fault_script(sentinel_t *sentinel) {
     sentinel->stat = FAULT;
 }
 
+void execute_recovery_script(sentinel_t *sentinel) {
+    if (sentinel->stat == RECOVERY) return;
+    sentinel->recovery_pid = execute_command(
+        sentinel->env.recovery, sentinel->env.recovery, (char **)"");
+    sentinel->stat = RECOVERY;
+}
+
 int is_exceed_threshold(sentinel_t *sentinel) {
     if (sentinel->fault_count >= sentinel->env.threshold) return 1;
     return 0;
@@ -172,9 +179,11 @@ void check_normal_process(siginfo_t *info, sentinel_t *sentinel) {
                 printf("fault_count: %d\n", sentinel->fault_count);
                 signal_to_target_pid(sentinel);
                 if (is_exceed_threshold(sentinel)) {
+                    execute_recovery_script(sentinel);
+                } else {
+                    set_fail_env(sentinel, info);
+                    execute_fault_script(sentinel);
                 }
-                set_fail_env(sentinel, info);
-                execute_fault_script(sentinel);
 
             } else {  // SUCCESS
                 sentinel_success_handler(sentinel);
@@ -223,7 +232,33 @@ void check_fail_process(siginfo_t *info, sentinel_t *sentinel) {
     }
 }
 
-void check_recovery_process(siginfo_t *info, sentinel_t *sentinel) {}
+void check_recovery_process(siginfo_t *info, sentinel_t *sentinel) {
+    switch (info->si_code) {
+        case CLD_EXITED:
+            printf("Recovery process exited\n");
+            if (check_status(sentinel, info)) {
+                // perrror("Recovery process exited with error\n");  // 여기
+                // 처리 무조건 필요
+                exit(1);
+            } else {
+                sentinel->stat = NORMAL;
+                // 바로 인터벌 실행
+            }
+            break;
+        case CLD_KILLED:
+            printf("Recovery process killed\n");
+            break;
+        case CLD_STOPPED:
+            printf("Recovery process stopped\n");
+            break;
+        case CLD_CONTINUED:
+            printf("Recovery process continued\n");
+            break;
+        default:  // UNKOWN
+            printf("Recovery process unknown\n");
+            break;
+    }
+}
 
 void sentinel_check_child_handler(int signo, siginfo_t *info, void *context) {
     int options = WNOHANG | WEXITED | WSTOPPED | WCONTINUED;
