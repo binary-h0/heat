@@ -3,6 +3,7 @@
 sentinel_t sentinel;
 
 void sentinel_init(sentinel_t *sentinel) {
+    sentinel->ppid = getppid();
     char *argv;
     char *tmp = getenv("HEAT_SCRIPT_ARGV");
     char **argvec;
@@ -30,8 +31,8 @@ void sentinel_init(sentinel_t *sentinel) {
     sentinel->env.interval = atoi(getenv("HEAT_INTERVAL"));
     sentinel->env.name = getenv("HEAT_NAME");
     sentinel->env.script_argv[0] = sentinel->env.name;
-    sentinel->env.pid = atoi(getenv("HEAT_PID"));
-    sentinel->env.signal = getenv("HEAT_SIGNAL");
+    sentinel->env.target_pid = atoi(getenv("HEAT_PID"));
+    sentinel->env.signal = atoi(getenv("HEAT_SIGNAL"));
     sentinel->env.fail = getenv("HEAT_FAIL");
     sentinel->env.recovery = getenv("HEAT_RECOVERY");
     sentinel->env.threshold = atoi(getenv("HEAT_THRESHOLD"));
@@ -57,11 +58,11 @@ void sentinel_init_timer(sentinel_t *sentinel) {
 }
 
 void sentinel_init_signals(sentinel_t *sentinel) {
+    sentinel->sa.sa_flags = SA_SIGINFO;
     signal_handler_t handlers[] = {
         {SIGALRM, sentinel_interval_handler},
-        // {SIGQUIT, sentinel_signal_handler},
+        {SIGCHLD, sentinel_check_child_handler},
     };
-    sentinel->sa.sa_flags = SA_SIGINFO;
     for (int i = 0; i < sizeof(handlers) / sizeof(signal_handler_t); i++) {
         sentinel->sa.sa_sigaction = handlers[i].handler;
         sigaction(handlers[i].signo, &(sentinel->sa), NULL);
@@ -74,18 +75,13 @@ void sentinel_init_signals(sentinel_t *sentinel) {
     // sigaddset(&sentinel->sa.sa_mask, SIGUSR1);
 }
 
-void sentinel_signal_handler(int signo, siginfo_t *info, void *context) {
-    psignal(signo, "received signal");
-    sentinel_executor(&sentinel);
-}
-
 void sentinel_print(sentinel_t *sentinel) {
     printf("interval: %d\n", sentinel->env.interval);
     printf("script: %s\n", sentinel->env.script);
     printf("script_argv: %s\n", sentinel->env.script_argv[0]);
     printf("name: %s\n", sentinel->env.name);
-    printf("pid: %d\n", sentinel->env.pid);
-    printf("signal: %s\n", sentinel->env.signal);
+    printf("pid: %d\n", sentinel->env.target_pid);
+    printf("signal: %d\n", sentinel->env.signal);
     printf("fail: %s\n", sentinel->env.fail);
     printf("recovery: %s\n", sentinel->env.recovery);
     printf("threshold: %d\n", sentinel->env.threshold);
@@ -125,8 +121,137 @@ int execute_command(const char *script, const char *name, char *const argv[]) {
 }
 
 void sentinel_interval_handler(int signo, siginfo_t *info, void *context) {
-    psignal(signo, "interval handler");
-    sentinel_executor(&sentinel);
+    if (sentinel.stat == NORMAL)
+        sentinel_executor(&sentinel);
+    else if (sentinel.stat == FAULT) {
+        // timer 초기화
+    }
+}
+
+int check_status(sentinel_t *sentinel, siginfo_t *info) {
+    if (info->si_status == 0) {
+        return 0;
+    } else {
+        sentinel->fault_count++;
+        return 1;
+    }
+}
+
+enum child_type check_child_type(sentinel_t *sentinel, siginfo_t *info) {
+    if (info->si_pid == sentinel->fail_pid) return FAIL_PROCESS;
+    if (info->si_pid == sentinel->recovery_pid) return RECOVERY_PROCESS;
+    return NORMAL_PROCESS;
+}
+
+void set_fail_env(sentinel_t *sentinel, siginfo_t *info) {
+    setenv("HEAT_FAIL_CODE", info->si_status, 1);
+    char str[20] = "";
+    sprintf(str, "%d", sentinel->last_check_time);
+    setenv("HEAT_FAIL_TIME", str, 1);
+    setenv("HEAT_FAIL_INTERVAL", getenv("HEAT_INTERVAL"), 1);
+    setenv("HEAT_FAIL_PID", info->si_pid, 1);
+}
+
+void execute_fault_script(sentinel_t *sentinel) {
+    if (sentinel->stat == FAULT) return;
+    sentinel->fail_pid =
+        execute_command(sentinel->env.fail, sentinel->env.fail, (char **)"");
+    sentinel->stat = FAULT;
+}
+
+int is_exceed_threshold(sentinel_t *sentinel) {
+    if (sentinel->fault_count >= sentinel->env.threshold) return 1;
+    return 0;
+}
+
+void check_normal_process(siginfo_t *info, sentinel_t *sentinel) {
+    switch (info->si_code) {
+        case CLD_EXITED:
+            if (check_status(sentinel, info)) {  // FAIL
+                sentinel->fault_count++;
+                printf("fault_count: %d\n", sentinel->fault_count);
+                signal_to_target_pid(sentinel);
+                if (is_exceed_threshold(sentinel)) {
+                }
+                set_fail_env(sentinel, info);
+                execute_fault_script(sentinel);
+
+            } else {  // SUCCESS
+                sentinel_success_handler(sentinel);
+            }
+            break;
+        case CLD_KILLED:
+            printf("Normal process killed\n");
+            break;
+        case CLD_STOPPED:
+            printf("Normal process stopped\n");
+            break;
+        case CLD_CONTINUED:
+            printf("Normal process continued\n");
+            break;
+        default:  // UNKOWN
+            printf("Normal process unknown\n");
+            break;
+    }
+}
+
+void check_fail_process(siginfo_t *info, sentinel_t *sentinel) {
+    switch (info->si_code) {
+        case CLD_EXITED:
+            printf("Fail process exited\n");
+            if (check_status(sentinel, info)) {
+                // perrror("Fail process exited with error\n");  // 여기 처리
+                // 무조건 필요
+                exit(1);
+            } else {
+                sentinel->stat = NORMAL;
+                // 바로 인터벌 실행
+            }
+            break;
+        case CLD_KILLED:
+            printf("Fail process killed\n");
+            break;
+        case CLD_STOPPED:
+            printf("Fail process stopped\n");
+            break;
+        case CLD_CONTINUED:
+            printf("Fail process continued\n");
+            break;
+        default:  // UNKOWN
+            printf("Fail process unknown\n");
+            break;
+    }
+}
+
+void check_recovery_process(siginfo_t *info, sentinel_t *sentinel) {}
+
+void sentinel_check_child_handler(int signo, siginfo_t *info, void *context) {
+    int options = WNOHANG | WEXITED | WSTOPPED | WCONTINUED;
+    while (1) {
+        if (waitid(P_ALL, 0, info, options) == 0 && info->si_pid != 0) {
+            time(sentinel.last_check_time);  // 이거 위치 설정 고려 필요
+            switch (check_child_type(&sentinel, info)) {
+                case FAIL_PROCESS:
+                    check_fail_process(info, &sentinel);
+                    break;
+                case RECOVERY_PROCESS:
+                    check_recovery_process(info, &sentinel);
+                    break;
+                case NORMAL_PROCESS:
+                    check_normal_process(info, &sentinel);
+                    break;
+            }
+        } else {
+            break;
+        }
+    }
+}
+
+void signal_to_target_pid(sentinel_t *sentinel) {
+    // kill(sentinel->ppid, 10);  // 실패 시 부모에게 시그널 전달 ->
+    // 해결해야함
+    if (sentinel->env.target_pid != sentinel->ppid)
+        kill(sentinel->env.target_pid, sentinel->env.signal);
 }
 
 int sentinel_check_process(sentinel_t *sentinel, int pid, int *cp_status) {
@@ -134,37 +259,59 @@ int sentinel_check_process(sentinel_t *sentinel, int pid, int *cp_status) {
     return 0;
 }
 
-process_stat_t sentinel_check_child_process(sentinel_t *sentinel) {
-    int cp_status;
-    int cp_list_size = sentinel->cp_count;
-    process_stat_t ps;
-    ps.pid = 0;
-    ps.status = 0;
-    // printf("cp_size: %d\n", cp_list_size);
-    while (cp_list_size--) {
-        int pid = cll_get(sentinel->cp_list);
-        // printf("pid: %d ", pid);
-        if (sentinel_check_process(sentinel, pid, &cp_status)) {
-            cll_delete(sentinel->cp_list);
-            sentinel->cp_count--;
-            ps.pid = pid;
-            ps.status = cp_status;
-            return ps;
+int check_fault(sentinel_t *sentinel, process_stat_t ps) {
+    // 0 : no fault, 0 < : fault
+    if (ps.pid == -1) return 0;
+    if (WIFEXITED(ps.status)) {
+        if (WEXITSTATUS(ps.status) == 0) {
+            return 0;
         } else {
-            // printf("process is running\n");
-            cll_next(sentinel->cp_list);
+            return WEXITSTATUS(ps.status);
         }
-        usleep(1000 * 100);
     }
-
-    return ps;
+    // else if (WIFSIGNALED(ps.status)) {
+    //     printf("Child terminated by signal %d\n", WTERMSIG(ps.status));
+    // } else if (WIFSTOPPED(ps.status)) {
+    //     printf("Child stopped by signal %d\n", WSTOPSIG(ps.status));
+    // } else if (WIFCONTINUED(ps.status)) {
+    //     printf("Child continued\n");
+    // }
+    return 0;
 }
+
+void sentinel_success_handler(sentinel_t *sentine) {}
+
+// void sentinel_check_child_process_is_done(sentinel_t *sentinel,
+//                                           process_stat_t *ps) {
+//     int cp_status;
+//     int cp_list_size = sentinel->cp_count;
+//     // printf("cp_size: %d\n", cp_list_size);
+//     ps->pid = -1;
+//     ps->status = -1;
+//     while (cp_list_size--) {
+//         int pid = cll_get(sentinel->cp_list);
+//         // printf("pid: %d ", pid);
+//         if (sentinel_check_process(sentinel, pid, &cp_status)) {
+//             cll_delete(sentinel->cp_list);
+//             sentinel->cp_count--;
+//             ps->pid = pid;
+//             ps->status = cp_status;
+//             return;
+//         } else {
+//             // printf("process is running\n");
+//             cll_next(sentinel->cp_list);
+//         }
+//         usleep(1000 * 100);
+//     }
+//     return;
+// }
 
 void sentinel_run(sentinel_t *sentinel) {
     process_stat_t ps;
     while (1) {
-        ps = sentinel_check_child_process(sentinel);
-        if (ps.pid == 0) continue;
+        // sentinel_check_child_process_is_done(sentinel, &ps);
+        // check_fault(sentinel, ps) ? sentinel_fault_handler(sentinel)
+        //                           : sentinel_success_handler(sentinel);
 
         usleep(1000 * 100);
     }

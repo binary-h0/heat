@@ -1,0 +1,4 @@
+# 파란색으로 출력
+echo "\033[34m RECOVERY SCRIPT RUN \033[0m"
+sleep 5
+echo "\033[34m RECOVERY SCRIPT DONE \033[0m"

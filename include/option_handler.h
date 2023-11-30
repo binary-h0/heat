@@ -13,6 +13,7 @@
 typedef int bool;
 typedef struct opts_struct {
     char *interval;
+    char *is_command;
     char *script;
     char *script_argv;
     char *name;

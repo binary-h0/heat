@@ -62,6 +62,7 @@ opts *option_process(int argc, char *const argv[]) {  // TODO: 함수명 변경 
                 }
                 break;
             case 's':
+                options->is_command = "0";
                 options->script = optarg;
                 // TODO: free 필요
                 char *cp_arg = (char *)malloc(strlen(optarg) + 1);
@@ -85,7 +86,7 @@ opts *option_process(int argc, char *const argv[]) {  // TODO: 함수명 변경 
                         "\e[1;31m"
                         "[ERROR] --pid value must be positive integer"
                         "\e[0m");
-                    return NULL;
+                    exit(1);
                 }
                 break;
             case 'S':
@@ -160,6 +161,7 @@ opts *option_process(int argc, char *const argv[]) {  // TODO: 함수명 변경 
     }
 
     if (options->interval == NULL) options->interval = "1";
+    if (options->is_command == NULL) options->is_command = "1";
     if (options->script == NULL) options->script = "echo hello";
     if (options->script_argv == NULL) options->script_argv = "";
     if (options->name == NULL) options->name = "hello";
@@ -167,7 +169,7 @@ opts *option_process(int argc, char *const argv[]) {  // TODO: 함수명 변경 
         options->pid = (char *)malloc(sizeof(char) * 10);
         sprintf(options->pid, "%d", getpid());
     }
-    if (options->signal == NULL) options->signal = "";
+    if (options->signal == NULL) options->signal = "SIGHUP";
     if (options->fail == NULL) options->fail = "";
     if (options->recovery == NULL) options->recovery = "";
     if (options->threshold == NULL) options->threshold = "";
