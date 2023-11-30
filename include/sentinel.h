@@ -45,18 +45,25 @@ typedef struct process_stat_struct {
 } process_stat_t;
 
 typedef struct sentinel_struct {
+    // environment
     int ppid;
     sentinel_env_t env;
     enum status stat;
+    int fault_count;
+    time_t current_time;
+    // manage process info
     cll_t *cp_list;
     int cp_count;
     int fail_pid;
     int recovery_pid;
+    time_t fail_time;
+    time_t fail_time_last;
+    // signal
     struct sigaction sa;
     signal_handler_t *signal_handler;
+    // time
     struct itimerval timer;
-    time_t last_check_time;
-    int fault_count;
+
 } sentinel_t;
 
 void sentinel_init(sentinel_t *sentinel);
@@ -72,6 +79,7 @@ void check_fail_process(siginfo_t *info, sentinel_t *sentinel);
 void check_normal_process(siginfo_t *info, sentinel_t *sentinel);
 void check_recovery_process(siginfo_t *info, sentinel_t *sentinel);
 
+void signal_to_target_pid(sentinel_t *sentinel);
 void sentinel_executor(sentinel_t *sentinel);
 int execute_command(const char *command, const char *name, char *const argv[]);
 void sentinel_print(sentinel_t *sentinel);
