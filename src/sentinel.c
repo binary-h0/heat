@@ -159,15 +159,22 @@ void execute_fault_script(sentinel_t *sentinel) {
     sentinel->stat = FAULT;
 }
 
+int is_exceed_threshold(sentinel_t *sentinel) {
+    if (sentinel->fault_count >= sentinel->env.threshold) return 1;
+    return 0;
+}
+
 void check_normal_process(siginfo_t *info, sentinel_t *sentinel) {
     switch (info->si_code) {
         case CLD_EXITED:
             if (check_status(sentinel, info)) {  // FAIL
                 sentinel->fault_count++;
+                printf("fault_count: %d\n", sentinel->fault_count);
                 signal_to_target_pid(sentinel);
+                if (is_exceed_threshold(sentinel)) {
+                }
                 set_fail_env(sentinel, info);
                 execute_fault_script(sentinel);
-                printf("fault_count: %d\n", sentinel->fault_count);
 
             } else {  // SUCCESS
                 sentinel_success_handler(sentinel);
