@@ -8,5 +8,6 @@
 #include <unistd.h>
 
 #include "option_handler.h"
+#include "signal_mapper.h"
 
 #endif
