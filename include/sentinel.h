@@ -16,7 +16,8 @@
 #define true 1
 #define MAX_CHILD_PROCESS 10
 
-enum status { NORMAL, FAULT, RECOVERY };
+enum status { NORMAL, FAULT, RECOVERY, VALIDATE };
+enum return_code { SUCCESS, FAIL };
 enum child_type { FAIL_PROCESS, RECOVERY_PROCESS, NORMAL_PROCESS };
 
 typedef struct sentinel_env_struct {
@@ -62,10 +63,12 @@ typedef struct sentinel_struct {
     struct sigaction sa;
     signal_handler_t *signal_handler;
     // timer
-    timer_t normal_timer;
     struct itimerspec normal_it;
-    timer_t recovery_timer;
     struct itimerspec recovery_it;
+    struct itimerspec stop_it;
+    timer_t normal_timer;
+    timer_t recovery_timer;
+
 } sentinel_t;
 
 void sentinel_init(sentinel_t *sentinel);
