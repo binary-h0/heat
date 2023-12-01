@@ -66,6 +66,16 @@ void process_info_print() {
     printf("[heat] pid: %d, pgid: %d\n", pid, pgid);
 }
 
+int check_file_permission(char *filename) {
+    struct stat file_stat;
+    if (stat(filename, &file_stat) == -1) {
+        perror("\e[1;31m[ERROR] stat\e[0m");
+        exit(1);
+    }
+    // 실행 권한 확인 근데 소유자만?
+    file_stat.st_mode &S_IRUSR ? printf("read ") : printf("no read ");
+}
+
 void check_script(char *script) {
     if (script == NULL) {
         perror("\e[1;31m[ERROR] script file not found\e[0m");
@@ -84,6 +94,17 @@ void check_command(char *command) {
     }
 }
 
+void check_recovery_script(char *script) {
+    if (script == NULL) {
+        perror("\e[1;31m[ERROR] recovery script file not found\e[0m");
+        exit(1);
+    }
+    if (access(script, F_OK) == -1) {
+        perror("\e[1;31m[ERROR] recovery script file not excutable\e[0m");
+        exit(1);
+    }
+}
+
 int main(int argc, char *const argv[]) {
     process_info_print();
     opts *options;
@@ -92,6 +113,7 @@ int main(int argc, char *const argv[]) {
         check_command(options->script);
     else
         check_script(options->script);
+    check_recovery_script(options->recovery);
     update_environment(options);
     build_sentinel_process(options);
 

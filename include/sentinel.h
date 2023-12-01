@@ -62,8 +62,9 @@ typedef struct sentinel_struct {
     struct sigaction sa;
     signal_handler_t *signal_handler;
     // time
-    struct itimerval timer;
-
+    // struct itimerval timer;
+    timer_t normal_timer;
+    timer_t recovery_timer;
 } sentinel_t;
 
 void sentinel_init(sentinel_t *sentinel);
@@ -79,7 +80,7 @@ void check_fail_process(siginfo_t *info, sentinel_t *sentinel);
 void check_normal_process(siginfo_t *info, sentinel_t *sentinel);
 void check_recovery_process(siginfo_t *info, sentinel_t *sentinel);
 
-void signal_to_target_pid(sentinel_t *sentinel);
+void sentinel_signal_to_target_pid(sentinel_t *sentinel);
 void sentinel_executor(sentinel_t *sentinel);
 int execute_command(const char *command, const char *name, char *const argv[]);
 void sentinel_print(sentinel_t *sentinel);

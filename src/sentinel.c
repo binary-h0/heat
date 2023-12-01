@@ -49,6 +49,18 @@ void sentinel_init(sentinel_t *sentinel) {
 
 void sentinel_init_timer(sentinel_t *sentinel) {
     // 이걸로 바꿔야 할 수도 있음
+    struct sigevent sev;
+    sev = (struct sigevent){
+        .sigev_notify = SIGEV_SIGNAL,
+        .sigev_signo = SIGALRM,
+        .sigev_value = {.sival_int = NORMAL},
+    };
+    timer_create(CLOCK_REALTIME, &sev, &(sentinel->normal_timer));
+    sev.sigev_value.sival_int = RECOVERY;
+    timer_create(CLOCK_REALTIME, &sev, &(sentinel->recovery_timer));
+    // timer 설정 이어서하기
+    timer_settime(sentinel->normal_timer, TIMER_ABSTIME, &(sentinel->timer),
+                  NULL);
     sentinel->timer.it_value.tv_sec = sentinel->env.interval;
     sentinel->timer.it_value.tv_usec = 0;
     sentinel->timer.it_interval.tv_sec = sentinel->env.interval;
