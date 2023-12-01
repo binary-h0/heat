@@ -19,6 +19,7 @@
 enum status { NORMAL, FAULT, RECOVERY, VALIDATE };
 enum return_code { SUCCESS, FAIL };
 enum child_type { FAIL_PROCESS, RECOVERY_PROCESS, NORMAL_PROCESS };
+enum timer_type { NORMAL_TIMER, RECOVERY_TIMER };
 
 typedef struct sentinel_env_struct {
     int interval;
@@ -51,6 +52,7 @@ typedef struct sentinel_struct {
     sentinel_env_t env;
     enum status stat;
     int fault_count;
+    int recovery_check_count;
     time_t current_time;
     // manage process info
     cll_t *cp_list;

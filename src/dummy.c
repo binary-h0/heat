@@ -56,7 +56,7 @@ int main(int argc, char const *argv[]) {
     it.it_interval.tv_nsec = 0;
 
     timer_settime(timer1, 0, &it, NULL);
-    it.it_interval.tv_sec = 2;
+    it.it_interval.tv_sec = 0;
     timer_settime(timer2, 0, &it, NULL);
     while (1) {
         usleep(1000 * 0.1);
