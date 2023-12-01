@@ -134,6 +134,7 @@ int execute_command(const char *script, const char *name, char *const argv[]) {
 }
 
 void sentinel_interval_handler(int signo, siginfo_t *info, void *context) {
+    printf("ALRM: %d\n", info->si_value.sival_int);
     if (info->si_value.sival_int == NORMAL)
         ;
     else if (info->si_value.sival_int == RECOVERY)
@@ -149,7 +150,6 @@ int check_status(sentinel_t *sentinel, siginfo_t *info) {
     if (info->si_status == 0) {
         return 0;
     } else {
-        sentinel->fault_count++;
         return 1;
     }
 }
@@ -209,6 +209,7 @@ void sentinel_continuous_fault_counter(sentinel_t *sentinel) {
     (sentinel->fault_count == 0) ? time(&(sentinel->fail_time))
                                  : time(&(sentinel->fail_time_last));
     sentinel->fault_count++;
+    printf("fault count: %d\n", sentinel->fault_count);
 }
 
 void check_normal_process(siginfo_t *info, sentinel_t *sentinel) {
