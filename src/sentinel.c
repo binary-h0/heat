@@ -43,7 +43,7 @@ void sentinel_init(sentinel_t *sentinel) {
     sentinel->cp_list = cll_init();
     sentinel->cp_count = 0;
     sentinel->fault_count = 0;
-    sentinel->recovery_check_count = sentinel->env.threshold;
+    sentinel->recovery_check_count = 0;
     sentinel_init_signals(sentinel);
     sentinel_init_timer(sentinel);
 }
@@ -144,9 +144,16 @@ void sentinel_interval_handler(int signo, siginfo_t *info, void *context) {
     printf("val: %d\n", info->si_value.sival_int);
     switch (info->si_value.sival_int) {
         case NORMAL_TIMER:
-            if ((sentinel.stat == NORMAL) | (sentinel.stat == VALIDATE))
+            if (sentinel.stat == NORMAL)
                 sentinel_executor(&sentinel);
-            else if (sentinel.stat == FAULT) {
+            else if (sentinel.stat == VALIDATE) {
+                if (sentinel.env.recovery_timeout != 0) {
+                } else if (is_recovery_check_count_exceed_threshold(
+                               &sentinel)) {
+                    timer_settime(sentinel.normal_timer, 0, &(sentinel.stop_it),
+                                  NULL);
+                }
+            } else if (sentinel.stat == FAULT) {
                 timer_settime(sentinel.normal_timer, 0, &(sentinel.stop_it),
                               NULL);
             } else if (sentinel.stat == RECOVERY) {
@@ -157,15 +164,15 @@ void sentinel_interval_handler(int signo, siginfo_t *info, void *context) {
         case RECOVERY_TIMER:
             if (sentinel.stat == NORMAL) {
                 printf("SUCCESS RECOVERY\n");
+            } else if (sentinel.stat == VALIDATE) {
+                sentinel.fault_count += sentinel.recovery_check_count;
+                sentinel.recovery_check_count = 0;
+                execute_recovery_script(&sentinel);
+            } else if (sentinel.stat == RECOVERY) {
+                printf("RECOVERY PROCESSING NOT DONE, BUT TIMEOUT.\n");
+                printf("RECOVERY PROCESSING AGAIN\n");
+                execute_recovery_script(&sentinel);
             }
-            // else if (sentinel.stat == VALIDATE) {
-            //     printf("FAIL RECOVERY\n");
-            // } else if (sentinel.stat == FAULT) {
-
-            // } else {
-            //     printf("UNEXPECTED RECOVERY\n");
-            //     printf("sentinel.stat: %d\n", sentinel.stat);
-            // }
             break;
     }
 }
@@ -236,6 +243,7 @@ int is_recovery_check_count_exceed_threshold(sentinel_t *sentinel) {
 void sentinel_continuous_fault_counter(sentinel_t *sentinel) {
     if (sentinel->stat == VALIDATE) {
         sentinel->recovery_check_count++;
+        printf("recovery check count: %d\n", sentinel->recovery_check_count);
         return;
     } else if (sentinel->stat == FAULT | sentinel->stat == RECOVERY)
         return;
@@ -259,10 +267,10 @@ void check_normal_process(siginfo_t *info, sentinel_t *sentinel) {
                     // HEAT 한테 시그널 보내기? 바로 인터벌 실행
                     break;
                 case FAIL:
+                    sentinel_continuous_fault_counter(sentinel);
                     set_fail_env(sentinel, info);
                     sentinel_signal_to_target_pid(sentinel);
-                    sentinel_continuous_fault_counter(sentinel);
-                    break;
+
                     if (is_fault_count_exceed_threshold(sentinel)) {
                         execute_recovery_script(sentinel);
                     } else {
