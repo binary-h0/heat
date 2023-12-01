@@ -61,10 +61,11 @@ typedef struct sentinel_struct {
     // signal
     struct sigaction sa;
     signal_handler_t *signal_handler;
-    // time
-    // struct itimerval timer;
+    // timer
     timer_t normal_timer;
+    struct itimerspec normal_it;
     timer_t recovery_timer;
+    struct itimerspec recovery_it;
 } sentinel_t;
 
 void sentinel_init(sentinel_t *sentinel);

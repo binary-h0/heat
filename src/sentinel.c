@@ -43,12 +43,11 @@ void sentinel_init(sentinel_t *sentinel) {
     sentinel->cp_list = cll_init();
     sentinel->cp_count = 0;
     sentinel->fault_count = 0;
-    sentinel_init_timer(sentinel);
     sentinel_init_signals(sentinel);
+    sentinel_init_timer(sentinel);
 }
 
 void sentinel_init_timer(sentinel_t *sentinel) {
-    // 이걸로 바꿔야 할 수도 있음
     struct sigevent sev;
     sev = (struct sigevent){
         .sigev_notify = SIGEV_SIGNAL,
@@ -58,14 +57,16 @@ void sentinel_init_timer(sentinel_t *sentinel) {
     timer_create(CLOCK_REALTIME, &sev, &(sentinel->normal_timer));
     sev.sigev_value.sival_int = RECOVERY;
     timer_create(CLOCK_REALTIME, &sev, &(sentinel->recovery_timer));
-    // timer 설정 이어서하기
-    timer_settime(sentinel->normal_timer, TIMER_ABSTIME, &(sentinel->timer),
-                  NULL);
-    sentinel->timer.it_value.tv_sec = sentinel->env.interval;
-    sentinel->timer.it_value.tv_usec = 0;
-    sentinel->timer.it_interval.tv_sec = sentinel->env.interval;
-    sentinel->timer.it_interval.tv_usec = 0;
-    setitimer(ITIMER_REAL, &(sentinel->timer), NULL);
+
+    sentinel->normal_it.it_value.tv_sec = sentinel->env.interval;
+    sentinel->normal_it.it_value.tv_nsec = 0;
+    sentinel->normal_it.it_interval.tv_sec = sentinel->env.interval;
+    sentinel->normal_it.it_interval.tv_nsec = 0;
+    timer_settime(sentinel->normal_timer, 0, &(sentinel->normal_it), NULL);
+    sentinel->recovery_it.it_value.tv_sec = sentinel->env.recovery_timeout;
+    sentinel->recovery_it.it_value.tv_nsec = 0;
+    sentinel->recovery_it.it_interval.tv_sec = 0;
+    sentinel->recovery_it.it_interval.tv_nsec = 0;
     sentinel_executor(sentinel);
 }
 
@@ -133,6 +134,10 @@ int execute_command(const char *script, const char *name, char *const argv[]) {
 }
 
 void sentinel_interval_handler(int signo, siginfo_t *info, void *context) {
+    if (info->si_value.sival_int == NORMAL)
+        ;
+    else if (info->si_value.sival_int == RECOVERY)
+        printf("RECOVERY TIMER\n");
     if (sentinel.stat == NORMAL || sentinel.stat == RECOVERY)
         sentinel_executor(&sentinel);
     else if (sentinel.stat == FAULT) {
@@ -189,6 +194,7 @@ void execute_recovery_script(sentinel_t *sentinel) {
         execute_fault_script(sentinel);
         return;
     }
+    timer_settime(sentinel->recovery_timer, 0, &(sentinel->recovery_it), NULL);
     sentinel->recovery_pid = execute_command(
         sentinel->env.recovery, sentinel->env.recovery, (char **)"");
     sentinel->stat = RECOVERY;
