@@ -1,6 +1,7 @@
 #ifndef SENTINEL_H
 #define SENTINEL_H
 
+#include <errno.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,10 +17,18 @@
 #define true 1
 #define MAX_CHILD_PROCESS 10
 
-enum status { NORMAL, FAULT, RECOVERY, VALIDATE };
+extern int errno;
+
+enum sentinel_status {
+    NORMAL,
+    CHECK_RUNNING,
+    FAULT_RUNNING,
+    RECOVERY_RUNNING,
+    VALIDATE
+};
 enum return_code { SUCCESS, FAIL };
-enum child_type { FAIL_PROCESS, RECOVERY_PROCESS, NORMAL_PROCESS };
-enum timer_type { NORMAL_TIMER, RECOVERY_TIMER };
+enum child_type { FAIL_PROCESS, RECOVERY_PROCESS, CHECK_PROCESS };
+enum timer_type { CHECK_TIMER, RECOVERY_TIMER };
 
 typedef struct sentinel_env_struct {
     int interval;
@@ -50,9 +59,9 @@ typedef struct sentinel_struct {
     // environment
     int ppid;
     sentinel_env_t env;
-    enum status stat;
-    int fault_count;
-    int recovery_check_count;
+    enum sentinel_status stat;
+    int continuous_fault_count;
+    int total_fault_count;
     time_t current_time;
     // manage process info
     cll_t *cp_list;
@@ -77,14 +86,14 @@ void sentinel_init(sentinel_t *sentinel);
 void sentinel_init_timer(sentinel_t *sentinel);
 void sentinel_init_signals(sentinel_t *sentinel);
 
-void sentinel_interval_handler(int signo, siginfo_t *info, void *context);
-void sentinel_check_child_handler(int signo, siginfo_t *info, void *context);
+void sentinel_sigalrm_handler(int signo, siginfo_t *info, void *context);
+void sentinel_sigchld_handler(int signo, siginfo_t *info, void *context);
 void sentinel_fault_handler(sentinel_t *sentinel);
 void sentinel_success_handler(sentinel_t *sentine);
 
-void check_fail_process(siginfo_t *info, sentinel_t *sentinel);
-void check_normal_process(siginfo_t *info, sentinel_t *sentinel);
-void check_recovery_process(siginfo_t *info, sentinel_t *sentinel);
+void fail_process_handler(siginfo_t *info, sentinel_t *sentinel);
+void check_process_handler(siginfo_t *info, sentinel_t *sentinel);
+void recovery_process_handler(siginfo_t *info, sentinel_t *sentinel);
 
 void execute_recovery_script(sentinel_t *sentinel);
 int is_recovery_check_count_exceed_threshold(sentinel_t *sentinel);

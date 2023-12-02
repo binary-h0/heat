@@ -42,8 +42,8 @@ void sentinel_init(sentinel_t *sentinel) {
     sentinel->stat = NORMAL;
     sentinel->cp_list = cll_init();
     sentinel->cp_count = 0;
-    sentinel->fault_count = 0;
-    sentinel->recovery_check_count = 0;
+    sentinel->continuous_fault_count = 0;
+    sentinel->total_fault_count = 0;
     sentinel_init_signals(sentinel);
     sentinel_init_timer(sentinel);
 }
@@ -53,7 +53,7 @@ void sentinel_init_timer(sentinel_t *sentinel) {
     sev = (struct sigevent){
         .sigev_notify = SIGEV_SIGNAL,
         .sigev_signo = SIGALRM,
-        .sigev_value = {.sival_int = NORMAL_TIMER},
+        .sigev_value = {.sival_int = CHECK_TIMER},
     };
     timer_create(CLOCK_REALTIME, &sev, &(sentinel->normal_timer));
     sev.sigev_value.sival_int = RECOVERY_TIMER;
@@ -79,13 +79,14 @@ void sentinel_init_timer(sentinel_t *sentinel) {
 void sentinel_init_signals(sentinel_t *sentinel) {
     sentinel->sa.sa_flags = SA_SIGINFO;
     signal_handler_t handlers[] = {
-        {SIGALRM, sentinel_interval_handler},
-        {SIGCHLD, sentinel_check_child_handler},
+        {SIGALRM, sentinel_sigalrm_handler},
+        {SIGCHLD, sentinel_sigchld_handler},
     };
     for (int i = 0; i < sizeof(handlers) / sizeof(signal_handler_t); i++) {
         sentinel->sa.sa_sigaction = handlers[i].handler;
         sigaction(handlers[i].signo, &(sentinel->sa), NULL);
     }
+    // TODO
     // 여기 의미상 처리 필요
     sigemptyset(&sentinel->sa.sa_mask);
     sigaddset(&sentinel->sa.sa_mask, SIGALRM);
@@ -139,49 +140,61 @@ int execute_command(const char *script, const char *name, char *const argv[]) {
     return -1;
 }
 
-void sentinel_interval_handler(int signo, siginfo_t *info, void *context) {
+void check_timer_handler(sentinel_t *sentinel) {
+    switch (sentinel->stat) {
+        case NORMAL:
+            sentinel_executor(sentinel);
+            break;
+        case CHECK_RUNNING:
+            break;
+        case FAULT_RUNNING:
+            timer_settime(sentinel->normal_timer, 0, &(sentinel->stop_it),
+                          NULL);
+            break;
+        case RECOVERY_RUNNING:
+            timer_settime(sentinel->normal_timer, 0, &(sentinel->stop_it),
+                          NULL);
+            break;
+        case VALIDATE:
+            sentinel_executor(sentinel);
+            break;
+    }
+}
+
+void recovery_timer_handler(sentinel_t *sentinel) {
+    switch (sentinel->stat) {
+        case NORMAL:
+            printf("SUCCESS RECOVERY\n");
+            break;
+        case CHECK_RUNNING:
+            break;
+        case FAULT_RUNNING:
+            printf("FAIL RECOVERY\n");
+            break;
+        case RECOVERY_RUNNING:
+            printf("RECOVERY PROCESSING NOT DONE, BUT TIMEOUT.\n");
+            printf("RECOVERY PROCESSING AGAIN\n");
+            execute_recovery_script(sentinel);
+            break;
+        case VALIDATE:
+            sentinel->total_fault_count += sentinel->continuous_fault_count;
+            sentinel->continuous_fault_count = 0;
+            execute_recovery_script(sentinel);
+            break;
+    }
+}
+
+void sentinel_sigalrm_handler(int signo, siginfo_t *info, void *context) {
     printf("STATE: %d | ", sentinel.stat);
     printf("val: %d | ", info->si_value.sival_int);
-    printf("RE_CH_CNT: %d | ", sentinel.recovery_check_count);
-    printf("F_CNT: %d | \n", sentinel.fault_count);
+    printf("CONT_FL_CNT: %d | ", sentinel.continuous_fault_count);
+    printf("TOTAL_FL_CNT: %d | \n", sentinel.total_fault_count);
     switch (info->si_value.sival_int) {
-        case NORMAL_TIMER:
-            if (sentinel.stat == NORMAL)
-                sentinel_executor(&sentinel);
-            else if (sentinel.stat == VALIDATE) {
-                if (sentinel.env.recovery_timeout != 0) {
-                    sentinel_executor(&sentinel);
-                } else {
-                    if (is_recovery_check_count_exceed_threshold(&sentinel)) {
-                        timer_settime(sentinel.normal_timer, 0,
-                                      &(sentinel.stop_it), NULL);
-                        sentinel.fault_count += sentinel.recovery_check_count;
-                        sentinel.recovery_check_count = 0;
-                        execute_recovery_script(&sentinel);
-                    } else
-                        sentinel_executor(&sentinel);
-                }
-            } else if (sentinel.stat == FAULT) {
-                timer_settime(sentinel.normal_timer, 0, &(sentinel.stop_it),
-                              NULL);
-            } else if (sentinel.stat == RECOVERY) {
-                timer_settime(sentinel.normal_timer, 0, &(sentinel.stop_it),
-                              NULL);
-            }
+        case CHECK_TIMER:
+            check_timer_handler(&sentinel);
             break;
         case RECOVERY_TIMER:
-            printf("RECOVERY TIMER\n");
-            if (sentinel.stat == NORMAL) {
-                printf("SUCCESS RECOVERY\n");
-            } else if (sentinel.stat == VALIDATE) {
-                sentinel.fault_count += sentinel.recovery_check_count;
-                sentinel.recovery_check_count = 0;
-                execute_recovery_script(&sentinel);
-            } else if (sentinel.stat == RECOVERY) {
-                printf("RECOVERY PROCESSING NOT DONE, BUT TIMEOUT.\n");
-                printf("RECOVERY PROCESSING AGAIN\n");
-                execute_recovery_script(&sentinel);
-            }
+            recovery_timer_handler(&sentinel);
             break;
     }
 }
@@ -197,7 +210,7 @@ enum return_code check_status(sentinel_t *sentinel, siginfo_t *info) {
 enum child_type check_child_type(sentinel_t *sentinel, siginfo_t *info) {
     if (info->si_pid == sentinel->fail_pid) return FAIL_PROCESS;
     if (info->si_pid == sentinel->recovery_pid) return RECOVERY_PROCESS;
-    return NORMAL_PROCESS;
+    return CHECK_PROCESS;
 }
 
 void set_fail_env(sentinel_t *sentinel, siginfo_t *info) {
@@ -216,76 +229,73 @@ void set_fail_env(sentinel_t *sentinel, siginfo_t *info) {
     sprintf(str_buf, "%d", info->si_pid);
     setenv("HEAT_FAIL_PID", str_buf, 1);
     memset(str_buf, 0, sizeof(str_buf));
-    sprintf(str_buf, "%d", sentinel->fault_count);
+    sprintf(str_buf, "%d", sentinel->total_fault_count);
     setenv("HEAT_FAIL_CNT", str_buf, 1);
 }
 
 void execute_fault_script(sentinel_t *sentinel) {
-    if (sentinel->stat == FAULT) return;
+    if (sentinel->stat == FAULT_RUNNING) return;
     if (sentinel->env.fail[0] == '\0') return;
-    sentinel->stat = FAULT;
+    sentinel->stat = FAULT_RUNNING;
     sentinel->fail_pid =
         execute_command(sentinel->env.fail, sentinel->env.fail, (char **)"");
 }
 
 void execute_recovery_script(sentinel_t *sentinel) {
-    if (sentinel->stat == RECOVERY) return;
+    if (sentinel->stat == RECOVERY_RUNNING) return;
     if (sentinel->env.recovery[0] == '\0') {
         execute_fault_script(sentinel);
         return;
     }
-    sentinel->stat = RECOVERY;
+    sentinel->stat = RECOVERY_RUNNING;
+    sentinel->continuous_fault_count = 0;
     sentinel->recovery_pid = execute_command(
         sentinel->env.recovery, sentinel->env.recovery, (char **)"");
 }
 
-int is_fault_count_exceed_threshold(sentinel_t *sentinel) {
-    if (sentinel->fault_count >= sentinel->env.threshold) return 1;
-    return 0;
-}
-
-int is_recovery_check_count_exceed_threshold(sentinel_t *sentinel) {
-    if (sentinel->recovery_check_count >= sentinel->env.threshold) return 1;
+int is_continuous_fault_count_exceed_threshold(sentinel_t *sentinel) {
+    if (sentinel->continuous_fault_count >= sentinel->env.threshold) return 1;
     return 0;
 }
 
 void sentinel_continuous_fault_counter(sentinel_t *sentinel) {
-    if (sentinel->stat == VALIDATE) {
-        sentinel->recovery_check_count++;
-        printf("recovery check count: %d\n", sentinel->recovery_check_count);
-        return;
-    } else if (sentinel->stat == FAULT | sentinel->stat == RECOVERY)
-        return;
-    else if (sentinel->stat == NORMAL) {
-        (sentinel->fault_count == 0) ? time(&(sentinel->fail_time))
-                                     : time(&(sentinel->fail_time_last));
-        sentinel->fault_count++;
-        printf("fault count: %d\n", sentinel->fault_count);
+    if (sentinel->stat == NORMAL) {
+        (sentinel->total_fault_count == 0) ? time(&(sentinel->fail_time))
+                                           : time(&(sentinel->fail_time_last));
+        sentinel->continuous_fault_count++;
+        sentinel->total_fault_count++;
+    } else if (sentinel->stat == VALIDATE) {
+        sentinel->continuous_fault_count++;
+        sentinel->total_fault_count++;
     }
 }
 
-void check_normal_process(siginfo_t *info, sentinel_t *sentinel) {
-    printf("N_PRC_EXIT\n");
+void check_process_fail_handler(sentinel_t *sentinel) {
+    if (is_continuous_fault_count_exceed_threshold(sentinel)) {
+        execute_recovery_script(sentinel);
+    } else {
+        if (sentinel->stat == RECOVERY_RUNNING |
+            sentinel->stat == FAULT_RUNNING | sentinel->stat == CHECK_RUNNING)
+            return;
+        execute_fault_script(sentinel);
+    }
+}
+
+void check_process_handler(siginfo_t *info, sentinel_t *sentinel) {
     switch (info->si_code) {
         case CLD_EXITED:
             switch (check_status(sentinel, info)) {
                 case SUCCESS:
-                    // SUCCESS
+                    // TODO: HEAT 한테 시그널 보내기? 바로 인터벌 실행
                     sentinel->stat = NORMAL;
-                    sentinel->fault_count = 0;
-                    sentinel->recovery_check_count = 0;
-                    // HEAT 한테 시그널 보내기? 바로 인터벌 실행
+                    sentinel->continuous_fault_count = 0;
+                    sentinel->total_fault_count = 0;
                     break;
                 case FAIL:
                     sentinel_continuous_fault_counter(sentinel);
                     set_fail_env(sentinel, info);
                     sentinel_signal_to_target_pid(sentinel);
-                    if ((sentinel->stat != VALIDATE) &&
-                        is_fault_count_exceed_threshold(sentinel)) {
-                        execute_recovery_script(sentinel);
-                    } else {
-                        execute_fault_script(sentinel);
-                    }
+                    check_process_fail_handler(sentinel);
                     break;
             }
             break;
@@ -304,23 +314,20 @@ void check_normal_process(siginfo_t *info, sentinel_t *sentinel) {
     }
 }
 
-void check_fail_process(siginfo_t *info, sentinel_t *sentinel) {
+void fail_process_handler(siginfo_t *info, sentinel_t *sentinel) {
     switch (info->si_code) {
         case CLD_EXITED:
             printf("Fail process exited\n");
             switch (check_status(sentinel, info)) {
                 case SUCCESS:
-                    // 실패 스크립트가 성공한거지 검사 스크립트가 성공한건 아님
-                    // TODO: 바로 검사 인터벌 실행 타이머 초기화 필요
-                    // sentinel->stat = VALIDATE;
-                    // timer_settime(sentinel->normal_timer, 0,
-                    //               &(sentinel->normal_it), NULL);
-                    // sentinel_executor(sentinel);
+                    if (sentinel->stat != VALIDATE) sentinel->stat = NORMAL;
+                    timer_settime(sentinel->normal_timer, 0,
+                                  &(sentinel->normal_it), NULL);
+                    sentinel_executor(sentinel);
                     break;
                 case FAIL:
-                    // 실패 스크립트 자체의 오류 바로 종료해야 함
-                    // perrror("Fail process exited with error\n");  // 여기
-                    // 처리 무조건 필요
+                    errno = EINVAL;
+                    perror("Fail script process exited with error\n");
                     exit(1);
             }
             break;
@@ -339,11 +346,12 @@ void check_fail_process(siginfo_t *info, sentinel_t *sentinel) {
     }
 }
 
-void check_recovery_process(siginfo_t *info, sentinel_t *sentinel) {
+void recovery_process_handler(siginfo_t *info, sentinel_t *sentinel) {
     switch (info->si_code) {
         case CLD_EXITED:
             switch (check_status(sentinel, info)) {
                 case SUCCESS:
+                    sentinel->continuous_fault_count = 0;
                     timer_settime(sentinel->recovery_timer, 0,
                                   &(sentinel->recovery_it), NULL);
                     sentinel->stat = VALIDATE;
@@ -375,20 +383,20 @@ void check_recovery_process(siginfo_t *info, sentinel_t *sentinel) {
     }
 }
 
-void sentinel_check_child_handler(int signo, siginfo_t *info, void *context) {
+void sentinel_sigchld_handler(int signo, siginfo_t *info, void *context) {
     int options = WNOHANG | WEXITED | WSTOPPED | WCONTINUED;
     while (1) {  // TODO: 여기 무한루프 처리 필요 없애도 될까?
         if (waitid(P_ALL, 0, info, options) == 0 && info->si_pid != 0) {
             // time(&(sentinel.current_time));  // 이거 위치 설정 고려 필요
             switch (check_child_type(&sentinel, info)) {
                 case FAIL_PROCESS:
-                    check_fail_process(info, &sentinel);
+                    fail_process_handler(info, &sentinel);
                     break;
                 case RECOVERY_PROCESS:
-                    check_recovery_process(info, &sentinel);
+                    recovery_process_handler(info, &sentinel);
                     break;
-                case NORMAL_PROCESS:
-                    check_normal_process(info, &sentinel);
+                case CHECK_PROCESS:
+                    check_process_handler(info, &sentinel);
                     break;
             }
         } else {
@@ -398,6 +406,7 @@ void sentinel_check_child_handler(int signo, siginfo_t *info, void *context) {
 }
 
 void sentinel_signal_to_target_pid(sentinel_t *sentinel) {
+    // TODO
     // kill(sentinel->ppid, 10);  // 실패 시 부모에게 시그널 전달 ->
     // 해결해야함
     if (sentinel->env.target_pid != sentinel->ppid)
