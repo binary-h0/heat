@@ -2,28 +2,80 @@
 
 int status, pid, pgid;
 
-int build_sentinel_process(opts *options) {
-    int pid = -1;
-    switch (pid = vfork()) {
-        case -1:  // fork failed
-            perror("fork failed");
-            return 1;
-            break;
-        case 0:  // child process
-            if (execlp("bin/sentinel", "sentinel", NULL) == -1) {
-                perror("execlp failed");
-                return 1;
-            }
-            break;
-        default:
-            while (waitpid(pid, &status, WNOHANG) != pid) {
-                printf("\e[1;32mmain is waiting\e[0m\n");
-                sleep(10);
-            }
-            printf("\e[1;32mmain is done\e[0m\n");
-            break;
+void process_info_print() {
+    pid = getpid();
+    pgid = getpgid(pid);
+    printf("[heat] pid: %d, pgid: %d\n", pid, pgid);
+}
+
+void validation_options(opts *options) {
+    if (atoi(options->is_command))
+        verify_command(options->script);
+    else
+        verify_script(options->script);
+    verify_recovery(options->recovery);
+    verify_fail(options->fail);
+}
+
+void verify_command(char *command) {
+    int len = strlen(command);
+    if (command[len - 3] == '.') {
+        verify_script(command);
+    } else if (command == "") {
+        errno = EINVAL;
+        perror("\e[1;31m[ERROR] command not found\e[0m");
+        exit(1);
     }
-    return 0;
+}
+
+void verify_script(char *script) {
+    if (script == "") {
+        errno = EINVAL;
+        perror("\e[1;31m[ERROR] script file not found\e[0m");
+        exit(1);
+    } else if (access(script, F_OK) == -1) {
+        perror("\e[1;31m[ERROR] script file not excutable\e[0m");
+        exit(1);
+    }
+    check_file_permission(script);
+}
+
+void verify_recovery(char *script) {
+    if (strlen(script) == 0) {
+        return;
+    }
+    verify_script(script);
+    check_file_permission(script);
+}
+
+void verify_fail(char *script) {
+    if (strlen(script) == 0) {
+        return;
+    }
+    verify_script(script);
+    check_file_permission(script);
+}
+
+void check_file_permission(char *filename) {
+    char buf[100];
+    sprintf(buf, "ls %s", filename);
+    if (system(buf)) {
+        perror("\e[1;31m[ERROR] file not found\e[0m");
+        exit(1);
+    }
+    struct stat file_stat;
+    if (stat(filename, &file_stat) == -1) {
+        perror("\e[1;31m[ERROR] file not found\e[0m");
+        exit(1);
+    }
+    // 실행 권한 확인 근데 소유자만?
+    if (!(file_stat.st_mode & S_IXUSR)) errno = EACCES;
+
+    if (errno != 0) {
+        perror("\e[1;31m[ERROR] file permission\e[0m");
+        exit(1);
+    }
+    errno = 0;
 }
 
 void update_environment(opts *options) {
@@ -60,40 +112,40 @@ void update_environment(opts *options) {
     printf("\e[1;32mupdate environment \e[0m");
 }
 
-void process_info_print() {
-    pid = getpid();
-    pgid = getpgid(pid);
-    printf("[heat] pid: %d, pgid: %d\n", pid, pgid);
-}
-
-void check_script(char *script) {
-    if (script == NULL) {
-        perror("\e[1;31m[ERROR] script file not found\e[0m");
-        exit(1);
+int build_sentinel_process(opts *options) {
+    int pid = -1;
+    switch (pid = vfork()) {
+        case -1:  // fork failed
+            perror("fork failed");
+            return 1;
+            break;
+        case 0:  // child process
+            if (execlp("bin/sentinel", "sentinel", NULL) == -1) {
+                perror("execlp failed");
+                return 1;
+            }
+            break;
+        default:
+            while (waitpid(pid, &status, WNOHANG) != pid) {
+                printf("\e[1;32mmain is waiting\e[0m\n");
+                sleep(10);
+            }
+            printf("\e[1;32mmain is done\e[0m\n");
+            break;
     }
-    if (access(script, F_OK) == -1) {
-        perror("\e[1;31m[ERROR] script file not excutable\e[0m");
-        exit(1);
-    }
-}
-
-void check_command(char *command) {
-    if (command == NULL) {
-        perror("\e[1;31m[ERROR] command not found\e[0m");
-        exit(1);
-    }
+    return 0;
 }
 
 int main(int argc, char *const argv[]) {
     process_info_print();
+
     opts *options;
     if ((options = option_process(argc, argv)) == NULL) return 1;
-    if (atoi(options->is_command))
-        check_command(options->script);
-    else
-        check_script(options->script);
-    update_environment(options);
-    build_sentinel_process(options);
 
+    validation_options(options);
+
+    update_environment(options);
+
+    build_sentinel_process(options);
     return 0;
 }
