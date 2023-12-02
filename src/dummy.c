@@ -6,33 +6,13 @@
 #include <time.h>
 #include <unistd.h>
 
+int pid;
+
 void handler(int signo, siginfo_t *info, void *context) {
-    printf("check ");
+    printf("check %d ", pid);
     printf("signo: %d ", signo);
     printf("info: %d ", info->si_pid);
-    printf("value: %d ", info->si_value.sival_int);
-    if (signo == SIGALRM) {
-        printf("timer\n");
-    } else if (signo == SIGUSR1) {
-        printf("usr1\n");
-    } else if (signo == SIGINT) {
-        exit(0);
-    }
-}
-
-timer_t timer1, timer2;
-
-void make_sev() {
-    struct sigevent sev;
-    sev.sigev_notify = SIGEV_SIGNAL;
-    sev.sigev_signo = SIGALRM;
-    sev.sigev_value.sival_int = 1;
-    if (timer_create(CLOCK_REALTIME, &sev, &timer1) == -1) {
-        perror("timer_create");
-        exit(1);
-    }
-    sev.sigev_value.sival_int = 0;
-    timer_create(CLOCK_REALTIME, &sev, &timer2);
+    printf("value: %d\n", info->si_value.sival_int);
 }
 
 int main(int argc, char const *argv[]) {
@@ -41,25 +21,33 @@ int main(int argc, char const *argv[]) {
     // sigemptyset(&sa.sa_mask);
     // sigaddset(&sa.sa_mask, SIGUSR1);
 
-    make_sev();
     struct sigaction sa;
     sa.sa_flags = SA_SIGINFO;
     sa.sa_sigaction = handler;
     sigaction(SIGUSR1, &sa, NULL);
     sigaction(SIGALRM, &sa, NULL);
     sigaction(SIGINT, &sa, NULL);
+    sigaction(SIGCHLD, &sa, NULL);
 
-    struct itimerspec it;
-    it.it_value.tv_sec = 1;
-    it.it_value.tv_nsec = 0;
-    it.it_interval.tv_sec = 1;
-    it.it_interval.tv_nsec = 0;
+    switch (pid = fork()) {
+        case -1:
+            perror("fork");
+            exit(1);
+            break;
+        case 0:
+            printf("child is running\n");
+            while (1) {
+                usleep(1000 * 2000);
+                printf("child is running\n");
+            }
+            break;
+        default:
+            break;
+    }
 
-    timer_settime(timer1, 0, &it, NULL);
-    it.it_interval.tv_sec = 0;
-    timer_settime(timer2, 0, &it, NULL);
     while (1) {
-        usleep(1000 * 0.1);
+        usleep(1000 * 4000);
+        printf("dummy is running\n");
     }
 
     return 0;
