@@ -141,17 +141,25 @@ int execute_command(const char *script, const char *name, char *const argv[]) {
 
 void sentinel_interval_handler(int signo, siginfo_t *info, void *context) {
     printf("STATE: %d | ", sentinel.stat);
-    printf("val: %d\n", info->si_value.sival_int);
+    printf("val: %d | ", info->si_value.sival_int);
+    printf("RE_CH_CNT: %d | ", sentinel.recovery_check_count);
+    printf("F_CNT: %d | \n", sentinel.fault_count);
     switch (info->si_value.sival_int) {
         case NORMAL_TIMER:
             if (sentinel.stat == NORMAL)
                 sentinel_executor(&sentinel);
             else if (sentinel.stat == VALIDATE) {
                 if (sentinel.env.recovery_timeout != 0) {
-                } else if (is_recovery_check_count_exceed_threshold(
-                               &sentinel)) {
-                    timer_settime(sentinel.normal_timer, 0, &(sentinel.stop_it),
-                                  NULL);
+                    sentinel_executor(&sentinel);
+                } else {
+                    if (is_recovery_check_count_exceed_threshold(&sentinel)) {
+                        timer_settime(sentinel.normal_timer, 0,
+                                      &(sentinel.stop_it), NULL);
+                        sentinel.fault_count += sentinel.recovery_check_count;
+                        sentinel.recovery_check_count = 0;
+                        execute_recovery_script(&sentinel);
+                    } else
+                        sentinel_executor(&sentinel);
                 }
             } else if (sentinel.stat == FAULT) {
                 timer_settime(sentinel.normal_timer, 0, &(sentinel.stop_it),
@@ -162,6 +170,7 @@ void sentinel_interval_handler(int signo, siginfo_t *info, void *context) {
             }
             break;
         case RECOVERY_TIMER:
+            printf("RECOVERY TIMER\n");
             if (sentinel.stat == NORMAL) {
                 printf("SUCCESS RECOVERY\n");
             } else if (sentinel.stat == VALIDATE) {
@@ -256,6 +265,7 @@ void sentinel_continuous_fault_counter(sentinel_t *sentinel) {
 }
 
 void check_normal_process(siginfo_t *info, sentinel_t *sentinel) {
+    printf("N_PRC_EXIT\n");
     switch (info->si_code) {
         case CLD_EXITED:
             switch (check_status(sentinel, info)) {
@@ -270,8 +280,8 @@ void check_normal_process(siginfo_t *info, sentinel_t *sentinel) {
                     sentinel_continuous_fault_counter(sentinel);
                     set_fail_env(sentinel, info);
                     sentinel_signal_to_target_pid(sentinel);
-
-                    if (is_fault_count_exceed_threshold(sentinel)) {
+                    if ((sentinel->stat != VALIDATE) &&
+                        is_fault_count_exceed_threshold(sentinel)) {
                         execute_recovery_script(sentinel);
                     } else {
                         execute_fault_script(sentinel);

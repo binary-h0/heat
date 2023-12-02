@@ -86,6 +86,9 @@ void check_fail_process(siginfo_t *info, sentinel_t *sentinel);
 void check_normal_process(siginfo_t *info, sentinel_t *sentinel);
 void check_recovery_process(siginfo_t *info, sentinel_t *sentinel);
 
+void execute_recovery_script(sentinel_t *sentinel);
+int is_recovery_check_count_exceed_threshold(sentinel_t *sentinel);
+
 void sentinel_signal_to_target_pid(sentinel_t *sentinel);
 void sentinel_executor(sentinel_t *sentinel);
 int execute_command(const char *command, const char *name, char *const argv[]);
