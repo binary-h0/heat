@@ -126,11 +126,6 @@ int build_sentinel_process(opts *options) {
             }
             break;
         default:
-            while (waitpid(pid, &status, WNOHANG) != pid) {
-                printf("\e[1;32mmain is waiting\e[0m\n");
-                sleep(10);
-            }
-            printf("\e[1;32mmain is done\e[0m\n");
             break;
     }
     return 0;
@@ -147,5 +142,11 @@ int main(int argc, char *const argv[]) {
     update_environment(options);
 
     build_sentinel_process(options);
+
+    while (waitpid(pid, &status, WNOHANG) != pid) {
+        printf("\e[1;32mmain is waiting\e[0m\n");
+        sleep(10);
+    }
+    printf("\e[1;32mmain is done\e[0m\n");
     return 0;
 }

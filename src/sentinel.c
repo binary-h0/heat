@@ -300,16 +300,19 @@ void check_process_handler(siginfo_t *info, sentinel_t *sentinel) {
             }
             break;
         case CLD_KILLED:
-            printf("Normal process killed\n");
+            perror("Normal process killed\n");
+            exit(1);
             break;
         case CLD_STOPPED:
-            printf("Normal process stopped\n");
+            perror("Normal process stopped\n");
+            exit(1);
             break;
         case CLD_CONTINUED:
             printf("Normal process continued\n");
             break;
         default:  // UNKOWN
-            printf("Normal process unknown\n");
+            perror("Normal process unknown\n");
+            exit(1);
             break;
     }
 }
@@ -332,16 +335,19 @@ void fail_process_handler(siginfo_t *info, sentinel_t *sentinel) {
             }
             break;
         case CLD_KILLED:
-            printf("Fail process killed\n");
+            perror("Fail process killed\n");
+            exit(1);
             break;
         case CLD_STOPPED:
-            printf("Fail process stopped\n");
+            perror("Fail process stopped\n");
+            exit(1);
             break;
         case CLD_CONTINUED:
             printf("Fail process continued\n");
             break;
         default:  // UNKOWN
-            printf("Fail process unknown\n");
+            perror("Fail process unknown\n");
+            exit(1);
             break;
     }
 }
@@ -362,23 +368,26 @@ void recovery_process_handler(siginfo_t *info, sentinel_t *sentinel) {
                     break;
                 case FAIL:
                     // 복구 스크립트자체의 오류 프로그램 바로 종료
-                    // perrror("Recovery process exited with error\n");
+                    // perror("Recovery process exited with error\n");
                     // 여기 처리 무조건 필요
                     exit(1);
                     break;
             }
             break;
         case CLD_KILLED:
-            printf("Recovery process killed\n");
+            perror("Recovery process killed\n");
+            exit(1);
             break;
         case CLD_STOPPED:
-            printf("Recovery process stopped\n");
+            perror("Recovery process stopped\n");
+            exit(1);
             break;
         case CLD_CONTINUED:
             printf("Recovery process continued\n");
             break;
         default:  // UNKOWN
-            printf("Recovery process unknown\n");
+            perror("Recovery process unknown\n");
+            exit(1);
             break;
     }
 }
