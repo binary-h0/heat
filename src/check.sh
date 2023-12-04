@@ -1,4 +1,7 @@
 # 초록색으로 출력
-echo "\033[32mcheck.sh run\033[0m"
+echo "check.sh run"
 sleep 2
+ps -ef
+ls -al bbb
+echo "check.sh done"
 exit 1

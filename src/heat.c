@@ -31,10 +31,10 @@ void verify_command(char *command) {
 void verify_script(char *script) {
     if (script == "") {
         errno = EINVAL;
-        perror("\e[1;31m[ERROR] script file not found\e[0m");
+        perror("[ERROR] script file not found");
         exit(1);
     } else if (access(script, F_OK) == -1) {
-        perror("\e[1;31m[ERROR] script file not excutable\e[0m");
+        perror("[ERROR] script file not excutable");
         exit(1);
     }
     check_file_permission(script);
@@ -131,6 +131,50 @@ int build_sentinel_process(opts *options) {
     return 0;
 }
 
+void heat_printer() {
+    // ANSI escape code 를 활용해 커서 움직여서 예쁘게 출력
+}
+
+void heat_init_fifo() {
+    // mkfifo
+    if (mkfifo("check_stdin_fifo", 0666) == -1) {
+        if (errno != EEXIST) {
+            perror("mkfifo");
+            exit(1);
+        }
+    }
+    if (mkfifo("check_stderr_fifo", 0666) == -1) {
+        if (errno != EEXIST) {
+            perror("mkfifo");
+            exit(1);
+        }
+    }
+    if (mkfifo("fail_stdin_fifo", 0666) == -1) {
+        if (errno != EEXIST) {
+            perror("mkfifo");
+            exit(1);
+        }
+    }
+    if (mkfifo("fail_stderr_fifo", 0666) == -1) {
+        if (errno != EEXIST) {
+            perror("mkfifo");
+            exit(1);
+        }
+    }
+    if (mkfifo("recovery_stdin_fifo", 0666) == -1) {
+        if (errno != EEXIST) {
+            perror("mkfifo");
+            exit(1);
+        }
+    }
+    if (mkfifo("recovery_stderr_fifo", 0666) == -1) {
+        if (errno != EEXIST) {
+            perror("mkfifo");
+            exit(1);
+        }
+    }
+}
+
 int main(int argc, char *const argv[]) {
     process_info_print();
 
@@ -141,10 +185,11 @@ int main(int argc, char *const argv[]) {
 
     update_environment(options);
 
+    heat_init_fifo();
+
     build_sentinel_process(options);
 
     while (waitpid(pid, &status, WNOHANG) != pid) {
-        printf("\e[1;32mmain is waiting\e[0m\n");
         sleep(10);
     }
     printf("\e[1;32mmain is done\e[0m\n");
