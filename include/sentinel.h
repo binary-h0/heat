@@ -16,7 +16,7 @@
 
 #define false 0
 #define true 1
-#define MAX_CHILD_PROCESS 10
+#define MAX_CHILD_PROCESS 100
 #define MAX_BUF_SIZE 1024
 #define STDIN_LOG_FORMAT "%ld : INFO : %s : \n"
 #define STDERR_LOG_FORMAT "%ld : FAIL : %s : \n"
@@ -46,8 +46,8 @@ typedef struct sentinel_env_struct {
     char *fail;
     char *recovery;
     int threshold;
-    char *fault_signal;
-    char *success_signal;
+    int fault_signal;
+    int success_signal;
     int recovery_timeout;
 } sentinel_env_t;
 
@@ -66,11 +66,13 @@ typedef struct sentinel_struct {
     int ppid;
     sentinel_env_t env;
     enum sentinel_status stat;
+    enum sentinel_status is_timeout;
     int continuous_fault_count;
     int total_fault_count;
     time_t current_time;
+    int is_set_recovery_signal;
     // manage process info
-    cll_t *cp_list;
+    int child_pid_lis[MAX_CHILD_PROCESS];
     int cp_count;
     int check_pid;
     int fail_pid;
@@ -126,3 +128,10 @@ void enable_rts_event(int fd, int sig);
 void sentinel_logger(sentinel_t *sentinel, int fd, char *prefix, char *script);
 
 #endif
+
+// 1231231234 : CHECK    : RUNNING :
+// 1231231234 : CHECK    : OK      :
+// 1231231234 : CHECK    : IGNORE      :
+// 1231231234 : CHECK    : FAIL    : Exit Code %d
+// 1231231234 : RECOVERY : RUNNING :
+// 1231231234 : FAIL     : FAULT   :

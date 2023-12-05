@@ -36,14 +36,19 @@ void sentinel_init(sentinel_t *sentinel) {
     sentinel->env.fail = getenv("HEAT_FAIL");
     sentinel->env.recovery = getenv("HEAT_RECOVERY");
     sentinel->env.threshold = atoi(getenv("HEAT_THRESHOLD"));
-    sentinel->env.fault_signal = getenv("HEAT_FAULT_SIGNAL");
-    sentinel->env.success_signal = getenv("HEAT_SUCCESS_SIGNAL");
+    sentinel->env.fault_signal = atoi(getenv("HEAT_FAULT_SIGNAL"));
+    sentinel->env.success_signal = atoi(getenv("HEAT_SUCCESS_SIGNAL"));
     sentinel->env.recovery_timeout = atoi(getenv("HEAT_RECOVERY_TIMEOUT"));
     sentinel->stat = NORMAL;
-    sentinel->cp_list = cll_init();
     sentinel->cp_count = 0;
     sentinel->continuous_fault_count = 0;
     sentinel->total_fault_count = 0;
+    if ((sentinel->env.fault_signal != 0) &&
+        (sentinel->env.success_signal != 0) &&
+        (sentinel->env.target_pid != sentinel->ppid))
+        sentinel->is_set_recovery_signal = 1;
+    else
+        sentinel->is_set_recovery_signal = 0;
     sentinel_init_signals(sentinel);
     sentinel_init_logger(sentinel);
     sentinel_init_timer(sentinel);
@@ -173,7 +178,7 @@ void sentinel_logger(sentinel_t *sentinel, int fd, char *prefix, char *script) {
 }
 
 void sentinel_init_signals(sentinel_t *sentinel) {
-    sentinel->sa.sa_flags = SA_SIGINFO;
+    sentinel->sa.sa_flags = SA_SIGINFO | SA_RESTART;
     // TODO: 하나의 시그널 핸들러에서 스위치로 분기 시킬 수 있음
     signal_handler_t handlers[] = {
         {SIGALRM, sentinel_sigalrm_handler},
@@ -186,9 +191,11 @@ void sentinel_init_signals(sentinel_t *sentinel) {
     }
     // TODO
     // 여기 의미상 처리 필요
-    sigemptyset(&sentinel->sa.sa_mask);
-    sigaddset(&sentinel->sa.sa_mask, SIGALRM);
-    sigaddset(&sentinel->sa.sa_mask, SIGQUIT);
+    sigemptyset(&(sentinel->sa.sa_mask));
+    sigaddset(&(sentinel->sa.sa_mask), SIGCHLD);
+    sigaddset(&(sentinel->sa.sa_mask), SIGALRM);
+    // sigaddset(&(sentinel->sa.sa_mask), SIGINT);
+    // sigaddset(&(sentinel->sa.sa_mask), SIGUSR1);
     // 여기까지
     // sigaddset(&sentinel->sa.sa_mask, SIGUSR1);
 }
@@ -203,15 +210,18 @@ void sentinel_print(sentinel_t *sentinel) {
     printf("fail: %s\n", sentinel->env.fail);
     printf("recovery: %s\n", sentinel->env.recovery);
     printf("threshold: %d\n", sentinel->env.threshold);
-    printf("fault_signal: %s\n", sentinel->env.fault_signal);
-    printf("success_signal: %s\n", sentinel->env.success_signal);
+    printf("fault_signal: %d\n", sentinel->env.fault_signal);
+    printf("success_signal: %d\n", sentinel->env.success_signal);
     printf("recovery_timeout: %d\n", sentinel->env.recovery_timeout);
 }
 
 int execute_check_script(sentinel_t *sentinel) {
-    // if (sentinel->stat == CHECK_RUNNING) return 1; // 이거 한줄로 스로틀링
-    // 가능
+    // 이거 한줄로 스로틀링 가능
+    // if (sentinel->stat == CHECK_RUNNING) return 1;
     sentinel->stat = CHECK_RUNNING;
+    time(&(sentinel->current_time));
+    printf("\e[1;30m%ld \e[0m:\e[1;37m CHECK    \e[0m: RUNNING : \n",
+           sentinel->current_time);
     sentinel->check_pid =
         execute_command(sentinel->env.script, sentinel->env.name,
                         sentinel->env.script_argv, CHECK_PROCESS);
@@ -220,7 +230,10 @@ int execute_check_script(sentinel_t *sentinel) {
 
 int execute_command(const char *script, const char *name, char *const argv[],
                     enum child_type type) {
+    sentinel.cp_count++;
+
     int pid, fd1, fd2;
+
     switch (pid = fork()) {
         case -1:  // fork failed
             perror("fork failed");
@@ -277,13 +290,13 @@ int execute_command(const char *script, const char *name, char *const argv[],
 void check_timer_handler(sentinel_t *sentinel) {
     switch (sentinel->stat) {
         case NORMAL:
+            sentinel->is_timeout = NORMAL;
             execute_check_script(sentinel);
             break;
         case CHECK_RUNNING:
-            // timer_settime(sentinel->normal_timer, 0, &(sentinel->stop_it),
-            //               NULL);
-            // sentinel->stat = TIMEOUT;
-            execute_check_script(sentinel);
+            sentinel->is_timeout = TIMEOUT;
+            timer_settime(sentinel->normal_timer, 0, &(sentinel->stop_it),
+                          NULL);
             break;
         case FAIL_RUNNING:
             timer_settime(sentinel->normal_timer, 0, &(sentinel->stop_it),
@@ -324,10 +337,6 @@ void recovery_timer_handler(sentinel_t *sentinel) {
 }
 
 void sentinel_sigalrm_handler(int signo, siginfo_t *info, void *context) {
-    // printf("STATE: %d | ", sentinel.stat);
-    // printf("val: %d | ", info->si_value.sival_int);
-    // printf("CONT_FL_CNT: %d | ", sentinel.continuous_fault_count);
-    // printf("TOTAL_FL_CNT: %d | \n", sentinel.total_fault_count);
     switch (info->si_value.sival_int) {
         case CHECK_TIMER:
             check_timer_handler(&sentinel);
@@ -376,6 +385,9 @@ int execute_fault_script(sentinel_t *sentinel) {
     if (sentinel->stat == FAIL_RUNNING) return 1;
     if (sentinel->env.fail[0] == '\0') return 1;
     sentinel->stat = FAIL_RUNNING;
+    time(&(sentinel->current_time));
+    printf("\e[1;30m%ld \e[0m:\e[1;33m FAIL     \e[0m: RUNNING : \n",
+           sentinel->current_time);
     sentinel->fail_pid = execute_command(sentinel->env.fail, sentinel->env.fail,
                                          (char **)"", FAIL_PROCESS);
     return 0;
@@ -387,7 +399,9 @@ int execute_recovery_script(sentinel_t *sentinel) {
         return execute_fault_script(sentinel);
     sentinel->stat = RECOVERY_RUNNING;
     sentinel->continuous_fault_count = 0;
-
+    time(&(sentinel->current_time));
+    printf("\e[1;30m%ld \e[0m:\e[1;34m RECOVERY \e[0m: RUNNING : \n",
+           sentinel->current_time);
     sentinel->recovery_pid =
         execute_command(sentinel->env.recovery, sentinel->env.recovery,
                         (char **)"", RECOVERY_PROCESS);
@@ -412,44 +426,55 @@ void sentinel_continuous_fault_counter(sentinel_t *sentinel) {
     }
 }
 
-void check_process_fail_handler(sentinel_t *sentinel) {
+int check_process_fail_handler(sentinel_t *sentinel) {
     if (is_continuous_fault_count_exceed_threshold(sentinel)) {
-        execute_recovery_script(sentinel);
+        return execute_recovery_script(sentinel);
     } else {
-        if (sentinel->stat == RECOVERY_RUNNING |
-            sentinel->stat ==
-                FAIL_RUNNING)  // | sentinel->stat == CHECK_RUNNING)
-            return;
-        execute_fault_script(sentinel);
+        if (sentinel->stat == RECOVERY_RUNNING | sentinel->stat == FAIL_RUNNING)
+            return 0;
+        return execute_fault_script(sentinel);
     }
 }
 
 void check_process_handler(siginfo_t *info, sentinel_t *sentinel) {
-    switch (info->si_code) {
+    int count = sentinel->cp_count--;
+    switch (info->si_status) {
         case CLD_EXITED:
             switch (check_status(sentinel, info)) {
                 case SUCCESS:
-                    // TODO: HEAT 한테 시그널 보내기? 바로 인터벌 실행
-                    printf("OK\n");
+                    printf("\e[s\e[%dA\e[24C\e[1;32mOK      \e[0m\e[u", count);
+                    if ((sentinel->total_fault_count > 0) &&
+                        (sentinel->is_set_recovery_signal == 1))
+                        kill(sentinel->env.target_pid,
+                             sentinel->env.success_signal);
                     sentinel->stat = NORMAL;
                     sentinel->continuous_fault_count = 0;
                     sentinel->total_fault_count = 0;
+
+                    if (sentinel->is_timeout == TIMEOUT) {
+                        sentinel->is_timeout = NORMAL;
+                        timer_settime(sentinel->normal_timer, 0,
+                                      &(sentinel->normal_it), NULL);
+                        execute_check_script(sentinel);
+                    }
                     break;
                 case FAIL:
                     printf(
-                        "Failed: Exit Code %d, details in "
-                        "./log/heat.verbose.log\n",
-                        info->si_status);
+                        "\e[s\e[%dA\e[24C\e[1;31mFAIL    \e[0m: Exit Code "
+                        "%d\e[u",
+                        count, info->si_status);
                     sentinel_continuous_fault_counter(sentinel);
                     set_fail_env(sentinel, info);
                     sentinel_signal_to_target_pid(sentinel);
-                    check_process_fail_handler(sentinel);
+                    sentinel->stat = NORMAL;
+                    if (check_process_fail_handler(sentinel) == 1) {
+                        if (sentinel->is_timeout == TIMEOUT) {
+                            timer_settime(sentinel->normal_timer, 0,
+                                          &(sentinel->normal_it), NULL);
+                            execute_check_script(sentinel);
+                        }
+                    }
                     break;
-            }
-            if (sentinel->stat == TIMEOUT) {
-                timer_settime(sentinel->normal_timer, 0, &(sentinel->normal_it),
-                              NULL);
-                execute_check_script(sentinel);
             }
             break;
         case CLD_KILLED:
@@ -464,25 +489,40 @@ void check_process_handler(siginfo_t *info, sentinel_t *sentinel) {
             printf("Normal process continued\n");
             break;
         default:  // UNKOWN
-            perror("Normal process unknown");
-            exit(1);
+            printf("\e[s\e[%dA\e[24C\e[1;32mOK      \e[0m\e[u", count);
+            if ((sentinel->total_fault_count > 0) &&
+                (sentinel->is_set_recovery_signal == 1))
+                kill(sentinel->env.target_pid, sentinel->env.success_signal);
+            sentinel->stat = NORMAL;
+            sentinel->continuous_fault_count = 0;
+            sentinel->total_fault_count = 0;
+
+            if (sentinel->is_timeout == TIMEOUT) {
+                sentinel->is_timeout = NORMAL;
+                timer_settime(sentinel->normal_timer, 0, &(sentinel->normal_it),
+                              NULL);
+                execute_check_script(sentinel);
+            }
             break;
     }
 }
 
 void fail_process_handler(siginfo_t *info, sentinel_t *sentinel) {
+    int count = sentinel->cp_count--;
     switch (info->si_code) {
         case CLD_EXITED:
-            printf("Fail process exited\n");
             switch (check_status(sentinel, info)) {
                 case SUCCESS:
+                    printf("\e[s\e[%dA\e[24C\e[1;32mOK      \e[0m\e[u", count);
                     if (sentinel->stat != VALIDATE) sentinel->stat = NORMAL;
                     timer_settime(sentinel->normal_timer, 0,
                                   &(sentinel->normal_it), NULL);
                     execute_check_script(sentinel);
                     break;
                 case FAIL:
-                    errno = EINVAL;
+                    printf("\e[s\e[%dA\e[24C\e[1;31mFAULT   \e[u", count);
+                    sentinel_logger_prefix(sentinel, FAULT_LOG_FORMAT,
+                                           sentinel->env.recovery);
                     perror("Fail script process exited with error");
                     exit(1);
             }
@@ -499,17 +539,22 @@ void fail_process_handler(siginfo_t *info, sentinel_t *sentinel) {
             printf("Fail process continued\n");
             break;
         default:  // UNKOWN
-            perror("Fail process unknown");
-            exit(1);
+            printf("\e[s\e[%dA\e[24C\e[1;32mOK      \e[0m\e[u", count);
+            if (sentinel->stat != VALIDATE) sentinel->stat = NORMAL;
+            timer_settime(sentinel->normal_timer, 0, &(sentinel->normal_it),
+                          NULL);
+            execute_check_script(sentinel);
             break;
     }
 }
 
 void recovery_process_handler(siginfo_t *info, sentinel_t *sentinel) {
+    int count = sentinel->cp_count--;
     switch (info->si_code) {
         case CLD_EXITED:
             switch (check_status(sentinel, info)) {
                 case SUCCESS:
+                    printf("\e[s\e[%dA\e[24C\e[1;32mOK      \e[0m\e[u", count);
                     sentinel->continuous_fault_count = 0;
                     timer_settime(sentinel->recovery_timer, 0,
                                   &(sentinel->recovery_it), NULL);
@@ -517,12 +562,12 @@ void recovery_process_handler(siginfo_t *info, sentinel_t *sentinel) {
                     timer_settime(sentinel->normal_timer, 0,
                                   &(sentinel->normal_it), NULL);
                     execute_check_script(sentinel);
-                    // 바로 인터벌 실행
                     break;
                 case FAIL:
-                    // 복구 스크립트자체의 오류 프로그램 바로 종료
-                    // perror("Recovery process exited with error\n");
-                    // 여기 처리 무조건 필요
+                    printf("\e[s\e[%dA\e[24C\e[1;31mFAULT   \e[u", count);
+                    sentinel_logger_prefix(sentinel, FAULT_LOG_FORMAT,
+                                           sentinel->env.recovery);
+                    perror("Recovery process exited with error\n");
                     exit(1);
                     break;
             }
@@ -539,8 +584,14 @@ void recovery_process_handler(siginfo_t *info, sentinel_t *sentinel) {
             printf("Recovery process continued\n");
             break;
         default:  // UNKOWN
-            perror("Recovery process unknown");
-            exit(1);
+            printf("\e[s\e[%dA\e[24C\e[1;32mOK      \e[0m\e[u", count);
+            sentinel->continuous_fault_count = 0;
+            timer_settime(sentinel->recovery_timer, 0, &(sentinel->recovery_it),
+                          NULL);
+            sentinel->stat = VALIDATE;
+            timer_settime(sentinel->normal_timer, 0, &(sentinel->normal_it),
+                          NULL);
+            execute_check_script(sentinel);
             break;
     }
 }
@@ -549,7 +600,6 @@ void sentinel_sigchld_handler(int signo, siginfo_t *info, void *context) {
     int options = WNOHANG | WEXITED | WSTOPPED | WCONTINUED;
     while (1) {  // TODO: 여기 무한루프 처리 필요 없애도 될까?
         if (waitid(P_ALL, 0, info, options) == 0 && info->si_pid != 0) {
-            // time(&(sentinel.current_time));  // 이거 위치 설정 고려 필요
             switch (check_child_type(&sentinel, info)) {
                 case FAIL_PROCESS:
                     fail_process_handler(info, &sentinel);
@@ -568,16 +618,16 @@ void sentinel_sigchld_handler(int signo, siginfo_t *info, void *context) {
 }
 
 void sentinel_signal_to_target_pid(sentinel_t *sentinel) {
-    // TODO
-    // kill(sentinel->ppid, 10);  // 실패 시 부모에게 시그널 전달 ->
-    // 해결해야함
-    if (sentinel->env.target_pid != sentinel->ppid)
+    if (sentinel->env.target_pid == sentinel->ppid) return;
+    if (sentinel->is_set_recovery_signal == 1)
+        if (is_continuous_fault_count_exceed_threshold(sentinel))
+            kill(sentinel->env.target_pid, sentinel->env.fault_signal);
+    if (sentinel->env.signal != 0)
         kill(sentinel->env.target_pid, sentinel->env.signal);
 }
 
 void sentinel_run(sentinel_t *sentinel) {
     while (1) {
-        usleep(1000 * 100);
         pause();
     }
 }
