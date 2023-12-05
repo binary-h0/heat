@@ -20,7 +20,7 @@ sentinel: sentinel.o circular_linked_list.o
 	mv $@ bin/
 
 %.o: $(addprefix src/, %.c)
-	$(CC) $(CFLAGS) -c $<
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -c $<
 	mv $@ bin/
 
 

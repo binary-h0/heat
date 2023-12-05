@@ -31,10 +31,10 @@ void verify_command(char *command) {
 void verify_script(char *script) {
     if (script == "") {
         errno = EINVAL;
-        perror("\e[1;31m[ERROR] script file not found\e[0m");
+        perror("[ERROR] script file not found");
         exit(1);
     } else if (access(script, F_OK) == -1) {
-        perror("\e[1;31m[ERROR] script file not excutable\e[0m");
+        perror("[ERROR] script file not excutable");
         exit(1);
     }
     check_file_permission(script);
@@ -92,24 +92,48 @@ void update_environment(opts *options) {
     ret += setenv("HEAT_PID", options->pid, 1);
     char sig[2];
     int sig_id;
-    if ((sig_id = get_signal_id(options->signal)) == -1) {
-        errno = EINVAL;
-        perror("\e[1;31m\n[ERROR] --signal value\e[0m");
-        exit(1);
+    if (strlen(options->signal) == 0) {
+        sprintf(sig, "%d", 0);
+    } else {
+        if ((sig_id = get_signal_id(options->signal)) == -1) {
+            errno = EINVAL;
+            perror("\e[1;31m\n[ERROR] --signal value\e[0m");
+            exit(1);
+        }
+        sprintf(sig, "%d", sig_id);
     }
-    sprintf(sig, "%d", sig_id);
     ret += setenv("HEAT_SIGNAL", sig, 1);
+    if (strlen(options->fault_signal) == 0) {
+        sprintf(sig, "%d", 0);
+    } else {
+        if ((sig_id = get_signal_id(options->fault_signal)) == -1) {
+            errno = EINVAL;
+            perror("\e[1;31m\n[ERROR] --fault-signal value\e[0m");
+            exit(1);
+        }
+        sprintf(sig, "%d", sig_id);
+    }
+    ret += setenv("HEAT_FAULT_SIGNAL", sig, 1);
+    if (strlen(options->success_signal) == 0) {
+        sprintf(sig, "%d", 0);
+    } else {
+        if ((sig_id = get_signal_id(options->success_signal)) == -1) {
+            errno = EINVAL;
+            perror("\e[1;31m\n[ERROR] --success-signal value\e[0m");
+            exit(1);
+        }
+        sprintf(sig, "%d", sig_id);
+    }
+    ret += setenv("HEAT_SUCCESS_SIGNAL", sig, 1);
+
     ret += setenv("HEAT_FAIL", options->fail, 1);
     ret += setenv("HEAT_RECOVERY", options->recovery, 1);
     ret += setenv("HEAT_THRESHOLD", options->threshold, 1);
-    ret += setenv("HEAT_FAULT_SIGNAL", options->fault_signal, 1);
-    ret += setenv("HEAT_SUCCESS_SIGNAL", options->success_signal, 1);
     ret += setenv("HEAT_RECOVERY_TIMEOUT", options->recovery_timeout, 1);
     if (ret != 0) {
         perror("\e[1;31m\n[ERROR] setenv\e[0m");
         exit(1);
     }
-    printf("\e[1;32mupdate environment \e[0m");
 }
 
 int build_sentinel_process(opts *options) {
@@ -131,6 +155,73 @@ int build_sentinel_process(opts *options) {
     return 0;
 }
 
+void heat_init_fifo() {
+    // mkfifo
+    if (mkfifo("check_stdin_fifo", 0666) == -1) {
+        if (errno != EEXIST) {
+            perror("mkfifo");
+            exit(1);
+        }
+    }
+    if (mkfifo("check_stderr_fifo", 0666) == -1) {
+        if (errno != EEXIST) {
+            perror("mkfifo");
+            exit(1);
+        }
+    }
+    if (mkfifo("fail_stdin_fifo", 0666) == -1) {
+        if (errno != EEXIST) {
+            perror("mkfifo");
+            exit(1);
+        }
+    }
+    if (mkfifo("fail_stderr_fifo", 0666) == -1) {
+        if (errno != EEXIST) {
+            perror("mkfifo");
+            exit(1);
+        }
+    }
+    if (mkfifo("recovery_stdin_fifo", 0666) == -1) {
+        if (errno != EEXIST) {
+            perror("mkfifo");
+            exit(1);
+        }
+    }
+    if (mkfifo("recovery_stderr_fifo", 0666) == -1) {
+        if (errno != EEXIST) {
+            perror("mkfifo");
+            exit(1);
+        }
+    }
+}
+
+void handler(int signo, siginfo_t *info, void *context) {
+    switch (signo) {
+        case SIGCHLD:
+            printf("\nHEAT is exited [log file: ./log/heat.verbose.log]\n");
+            exit(1);
+            break;
+        case SIGINT:
+            printf("\nHEAT is interupted [log file: ./log/heat.verbose.log]\n");
+            exit(0);
+            break;
+        default:
+            break;
+    }
+}
+
+void sig_init() {
+    struct sigaction sa;
+    sa.sa_flags = SA_SIGINFO;
+    sa.sa_sigaction = handler;
+    sigfillset(&sa.sa_mask);
+    sigdelset(&sa.sa_mask, SIGINT);
+    sigdelset(&sa.sa_mask, SIGCHLD);
+    sigprocmask(SIG_BLOCK, &sa.sa_mask, NULL);
+    sigaction(SIGCHLD, &sa, NULL);
+    sigaction(SIGINT, &sa, NULL);
+}
+
 int main(int argc, char *const argv[]) {
     process_info_print();
 
@@ -141,12 +232,14 @@ int main(int argc, char *const argv[]) {
 
     update_environment(options);
 
+    heat_init_fifo();
+    fflush(stdout);
+
     build_sentinel_process(options);
+    sig_init();
 
     while (waitpid(pid, &status, WNOHANG) != pid) {
-        printf("\e[1;32mmain is waiting\e[0m\n");
         sleep(10);
     }
-    printf("\e[1;32mmain is done\e[0m\n");
     return 0;
 }

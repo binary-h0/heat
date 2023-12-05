@@ -7,3 +7,4 @@
 ./heat -i 1 -s ./src/check.sh --recovery ./src/recovery.sh --threshold 5 --recovery-timeout 3
 ./heat -i 1 -s ./src/check.sh --recovery ./src/recovery.sh --threshold 5
 ./heat -i 1 -s ./src/check.sh --fail ./src/fail.sh --recovery ./src/recovery.sh --threshold 5
+./heat -i 1 -s ./src/check.sh --fail ./src/fail.sh --recovery ./src/recovery.sh --threshold 5 --fault-signal SIGUSR1 --success-signal SIGINT --pid 1234123412421

@@ -1,3 +1,4 @@
-echo "\033[0;31mFAIL SCRIPT RUN\033[0m"
-sleep 3
-echo "\033[0;31mFAIL SCRIPT DONE\033[0m"
+echo "FAIL SCRIPT RUN"
+sleep 1
+echo "FAIL SCRIPT DONE"
+exit 0
