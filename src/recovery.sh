@@ -8,3 +8,4 @@ echo "HEAT_FAIL_PID: $HEAT_FAIL_PID"
 echo "HEAT_FAIL_CNT: $HEAT_FAIL_CNT"
 sleep 5
 echo "RECOVERY SCRIPT DONE"
+exit 0
