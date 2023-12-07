@@ -144,7 +144,7 @@ int build_sentinel_process(opts *options) {
             return 1;
             break;
         case 0:  // child process
-            if (execlp("bin/sentinel", "sentinel", NULL) == -1) {
+            if (execlp("/usr/lib/heat/bin/sentinel", "sentinel", NULL) == -1) {
                 perror("execlp failed");
                 return 1;
             }
@@ -157,37 +157,37 @@ int build_sentinel_process(opts *options) {
 
 void heat_init_fifo() {
     // mkfifo
-    if (mkfifo("check_stdin_fifo", 0666) == -1) {
+    if (mkfifo("/usr/lib/heat/util/check_stdin_fifo", 0666) == -1) {
         if (errno != EEXIST) {
             perror("mkfifo");
             exit(1);
         }
     }
-    if (mkfifo("check_stderr_fifo", 0666) == -1) {
+    if (mkfifo("/usr/lib/heat/util/check_stderr_fifo", 0666) == -1) {
         if (errno != EEXIST) {
             perror("mkfifo");
             exit(1);
         }
     }
-    if (mkfifo("fail_stdin_fifo", 0666) == -1) {
+    if (mkfifo("/usr/lib/heat/util/fail_stdin_fifo", 0666) == -1) {
         if (errno != EEXIST) {
             perror("mkfifo");
             exit(1);
         }
     }
-    if (mkfifo("fail_stderr_fifo", 0666) == -1) {
+    if (mkfifo("/usr/lib/heat/util/fail_stderr_fifo", 0666) == -1) {
         if (errno != EEXIST) {
             perror("mkfifo");
             exit(1);
         }
     }
-    if (mkfifo("recovery_stdin_fifo", 0666) == -1) {
+    if (mkfifo("/usr/lib/heat/util/recovery_stdin_fifo", 0666) == -1) {
         if (errno != EEXIST) {
             perror("mkfifo");
             exit(1);
         }
     }
-    if (mkfifo("recovery_stderr_fifo", 0666) == -1) {
+    if (mkfifo("/usr/lib/heat/util/recovery_stderr_fifo", 0666) == -1) {
         if (errno != EEXIST) {
             perror("mkfifo");
             exit(1);

@@ -65,39 +65,45 @@ void sentinel_fault_logger(sentinel_t *sentinel, char *error) {
 
 void sentinel_init_logger(sentinel_t *sentinel) {
     FILE *fp;
-    if ((fp = fopen("./log/heat.verbose.log", "a")) == NULL) {
+    if ((fp = fopen("/usr/lib/heat/log/heat.verbose.log", "a")) == NULL) {
         perror("fopen");
         exit(1);
     };
     sentinel->log_fd = fileno(fp);
     dup2(sentinel->log_fd, STDERR_FILENO);
 
-    sentinel->check_stdin_fifo_fd = open("./check_stdin_fifo", O_RDWR);
+    sentinel->check_stdin_fifo_fd =
+        open("/usr/lib/heat/util/check_stdin_fifo", O_RDWR);
     if (sentinel->check_stdin_fifo_fd == -1) {
-        perror("open fifo error");
+        perror("open check stdin fifo error");
         exit(1);
     }
-    sentinel->check_stderr_fifo_fd = open("./check_stderr_fifo", O_RDWR);
+    sentinel->check_stderr_fifo_fd =
+        open("/usr/lib/heat/util/check_stderr_fifo", O_RDWR);
     if (sentinel->check_stderr_fifo_fd == -1) {
         perror("open fifo error");
         exit(1);
     }
-    sentinel->fail_stdin_fifo_fd = open("./fail_stdin_fifo", O_RDWR);
+    sentinel->fail_stdin_fifo_fd =
+        open("/usr/lib/heat/util/fail_stdin_fifo", O_RDWR);
     if (sentinel->fail_stdin_fifo_fd == -1) {
         perror("open");
         exit(1);
     }
-    sentinel->fail_stderr_fifo_fd = open("./fail_stderr_fifo", O_RDWR);
+    sentinel->fail_stderr_fifo_fd =
+        open("/usr/lib/heat/util/fail_stderr_fifo", O_RDWR);
     if (sentinel->fail_stderr_fifo_fd == -1) {
         perror("open");
         exit(1);
     }
-    sentinel->recovery_stdin_fifo_fd = open("./recovery_stdin_fifo", O_RDWR);
+    sentinel->recovery_stdin_fifo_fd =
+        open("/usr/lib/heat/util/recovery_stdin_fifo", O_RDWR);
     if (sentinel->recovery_stdin_fifo_fd == -1) {
         perror("open");
         exit(1);
     }
-    sentinel->recovery_stderr_fifo_fd = open("./recovery_stderr_fifo", O_RDWR);
+    sentinel->recovery_stderr_fifo_fd =
+        open("/usr/lib/heat/util/recovery_stderr_fifo", O_RDWR);
     if (sentinel->recovery_stderr_fifo_fd == -1) {
         perror("open");
         exit(1);
@@ -243,32 +249,37 @@ int execute_command(const char *script, const char *name, char *const argv[],
         case 0:  // child process
             switch (type) {
                 case CHECK_PROCESS:
-                    if ((fd1 = open("./check_stdin_fifo", O_WRONLY)) == -1) {
+                    if ((fd1 = open("/usr/lib/heat/util/check_stdin_fifo",
+                                    O_WRONLY)) == -1) {
                         perror("open");
                         exit(1);
                     }
-                    if ((fd2 = open("./check_stderr_fifo", O_WRONLY)) == -1) {
+                    if ((fd2 = open("/usr/lib/heat/util/check_stderr_fifo",
+                                    O_WRONLY)) == -1) {
                         perror("open");
                         exit(1);
                     }
                     break;
                 case FAIL_PROCESS:
-                    if ((fd1 = open("./fail_stdin_fifo", O_WRONLY)) == -1) {
+                    if ((fd1 = open("/usr/lib/heat/util/fail_stdin_fifo",
+                                    O_WRONLY)) == -1) {
                         perror("open");
                         exit(1);
                     }
-                    if ((fd2 = open("./fail_stderr_fifo", O_WRONLY)) == -1) {
+                    if ((fd2 = open("/usr/lib/heat/util/fail_stderr_fifo",
+                                    O_WRONLY)) == -1) {
                         perror("open");
                         exit(1);
                     }
                     break;
                 case RECOVERY_PROCESS:
-                    if ((fd1 = open("./recovery_stdin_fifo", O_WRONLY)) == -1) {
+                    if ((fd1 = open("/usr/lib/heat/util/recovery_stdin_fifo",
+                                    O_WRONLY)) == -1) {
                         perror("open");
                         exit(1);
                     }
-                    if ((fd2 = open("./recovery_stderr_fifo", O_WRONLY)) ==
-                        -1) {
+                    if ((fd2 = open("/usr/lib/heat/util/recovery_stderr_fifo",
+                                    O_WRONLY)) == -1) {
                         perror("open");
                         exit(1);
                     }
