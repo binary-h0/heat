@@ -5,7 +5,7 @@ int status, pid, pgid;
 void process_info_print() {
     pid = getpid();
     pgid = getpgid(pid);
-    printf("[heat] pid: %d, pgid: %d\n", pid, pgid);
+    // printf("[heat] pid: %d, pgid: %d\n", pid, pgid);
 }
 
 void validation_options(opts *options) {
@@ -223,8 +223,7 @@ void sig_init() {
 }
 
 int main(int argc, char *const argv[]) {
-    process_info_print();
-
+    process_info_print();  // pid, pgid 의존성 해결해야함
     opts *options;
     if ((options = option_process(argc, argv)) == NULL) return 1;
 

@@ -1,4 +1,4 @@
 echo "FAIL SCRIPT RUN"
-sleep 1
+sleep 2
 echo "FAIL SCRIPT DONE"
 exit 0

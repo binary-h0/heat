@@ -5,12 +5,7 @@ SOURCE=option_handler.c sentinel.c heat.c circular_linked_list.c signal_mapper.c
 OBJS=$(SOURCE:c=o)
 EXECUTABLE=heat
 
-all: $(OBJS)
-
-# all: $(EXECUTABLE)
-
-# $(EXECUTABLE): $(OBJS)
-# 	$(CC) $(addprefix bin/, $(OBJS)) -o $@
+all: heat sentinel
 
 heat: heat.o option_handler.o signal_mapper.o
 	$(CC) bin/heat.o bin/option_handler.o bin/signal_mapper.o -o $@ -lrt

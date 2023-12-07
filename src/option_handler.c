@@ -169,7 +169,7 @@ opts *option_process(int argc, char *const argv[]) {  // TODO: 함수명 변경 
         options->pid = (char *)malloc(sizeof(char) * 10);
         sprintf(options->pid, "%d", getpid());
     }
-    if (options->signal == NULL) options->signal = "";
+    if (options->signal == NULL) options->signal = "SIGHUP";
     if (options->fail == NULL) options->fail = "";
     if (options->recovery == NULL) options->recovery = "";
     if (options->threshold == NULL) options->threshold = "";

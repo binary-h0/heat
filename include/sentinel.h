@@ -18,9 +18,9 @@
 #define true 1
 #define MAX_CHILD_PROCESS 100
 #define MAX_BUF_SIZE 1024
-#define STDIN_LOG_FORMAT "%ld : INFO : %s : \n"
-#define STDERR_LOG_FORMAT "%ld : FAIL : %s : \n"
-#define FAULT_LOG_FORMAT "%ld : ERROR : sentinel : \n%s"
+#define STDIN_LOG_FORMAT "\n%ld : INFO : %s : \n"
+#define STDERR_LOG_FORMAT "\n%ld : FAIL : %s : \n"
+#define FAULT_LOG_FORMAT "\n%ld : ERROR : sentinel : \n%s"
 
 extern int errno;
 
@@ -67,6 +67,9 @@ typedef struct sentinel_struct {
     sentinel_env_t env;
     enum sentinel_status stat;
     enum sentinel_status is_timeout;
+    int timeout_pid;
+    int is_timer_blocked;
+    int is_validate_timeout_done;
     int continuous_fault_count;
     int total_fault_count;
     time_t current_time;
@@ -124,6 +127,8 @@ int execute_check_script(sentinel_t *sentinel);
 int execute_recovery_script(sentinel_t *sentinel);
 void sentinel_print(sentinel_t *sentinel);
 void enable_rts_event(int fd, int sig);
+
+int check_process_fail_handler(sentinel_t *sentinel, siginfo_t *info);
 
 void sentinel_logger(sentinel_t *sentinel, int fd, char *prefix, char *script);
 
