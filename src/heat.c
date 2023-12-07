@@ -198,11 +198,15 @@ void heat_init_fifo() {
 void handler(int signo, siginfo_t *info, void *context) {
     switch (signo) {
         case SIGCHLD:
-            printf("\nHEAT is exited [log file: ./log/heat.verbose.log]\n");
+            printf(
+                "\nHEAT is exited [log file: "
+                "/lib/heat/log/heat.verbose.log]\n");
             exit(1);
             break;
         case SIGINT:
-            printf("\nHEAT is interupted [log file: ./log/heat.verbose.log]\n");
+            printf(
+                "\nHEAT is interupted [log file: "
+                "/lib/heat/log/heat.verbose.log]\n");
             exit(0);
             break;
         default:

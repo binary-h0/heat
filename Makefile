@@ -7,6 +7,7 @@ EXECUTABLE=heat
 
 all: heat sentinel dummy
 	cp ./heat /usr/local/bin/heat
+	cp ./dummy /usr/local/bin/dummy
 
 heat: heat.o option_handler.o signal_mapper.o
 	$(CC) bin/heat.o bin/option_handler.o bin/signal_mapper.o -o $@ -lrt
